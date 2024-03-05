@@ -168,13 +168,25 @@ class Agent(BaseModel):
         self.agent_executor.tools_description = render_text_description(tools)
         self.agent_executor.tools_names = self.__tools_names(tools)
 
-        result = self.agent_executor.invoke(
+        stream = self.agent_executor.astream_events(
             {
                 "input": task_prompt,
                 "tool_names": self.agent_executor.tools_names,
                 "tools": self.agent_executor.tools_description,
             }
-        )["output"]
+        )
+        result = ""
+        async for event in stream:
+            kind = event["event"]
+            if kind == "on_chat_model_stream":
+                chunk = repr(event['data']['chunk'].content)
+                print(
+                    f"Chat model chunk: {chunk}",
+                    flush=True,
+                )
+                result += chunk
+            if kind == "on_parser_stream":
+                print(f"Parser chunk: {event['data']['chunk']}", flush=True)
 
         if self.max_rpm:
             self._rpm_controller.stop_rpm_counter()
