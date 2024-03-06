@@ -1,5 +1,7 @@
 import os
 import uuid
+import asyncio
+import threading
 from typing import Any, Dict, List, Optional, Tuple
 
 from langchain.agents.agent import RunnableAgent
@@ -20,6 +22,7 @@ from pydantic import (
 )
 from pydantic_core import PydanticCustomError
 
+from queue import Queue
 from crewai.agents import CacheHandler, CrewAgentExecutor, CrewAgentParser, ToolsHandler
 from crewai.utilities import I18N, Logger, Prompts, RPMController
 from crewai.utilities.token_counter_callback import TokenCalcHandler, TokenProcess
@@ -168,30 +171,48 @@ class Agent(BaseModel):
         self.agent_executor.tools_description = render_text_description(tools)
         self.agent_executor.tools_names = self.__tools_names(tools)
 
-        stream = self.agent_executor.astream_events(
-            {
-                "input": task_prompt,
-                "tool_names": self.agent_executor.tools_names,
-                "tools": self.agent_executor.tools_description,
-            }
-        )
-        result = ""
-        async for event in stream:
-            kind = event["event"]
-            if kind == "on_chat_model_stream":
-                chunk = repr(event['data']['chunk'].content)
-                print(
-                    f"Chat model chunk: {chunk}",
-                    flush=True,
-                )
-                result += chunk
-            if kind == "on_parser_stream":
-                print(f"Parser chunk: {event['data']['chunk']}", flush=True)
-
+        result_queue = Queue()
+        _thread = threading.Thread(target=self.wrap_async_func, args=(task_prompt, result_queue))
+        _thread.start()
+        _thread.join()
+        result = result_queue.get()
+        
         if self.max_rpm:
             self._rpm_controller.stop_rpm_counter()
 
         return result
+
+    def wrap_async_func(self, args, queue):
+        asyncio.run(self.stream_execute(args, queue))
+
+    async def stream_execute(self, task_prompt, result_queue):
+        result = ""
+        acc = ""
+        first = True
+        async for event in self.agent_executor.astream_events(
+            {
+                "input": task_prompt,
+                "tool_names": self.agent_executor.tools_names,
+                "tools": self.agent_executor.tools_description,
+            },
+            version="v1",
+        ):
+            kind = event["event"]
+            if kind == "on_chat_model_stream":
+                content = event['data']['chunk'].content
+                chunk = repr(content)
+                self.step_callback("message", content, first)
+                first = False
+                print(
+                    f"Chat model chunk: {chunk}",
+                    flush=True,
+                )
+                acc += content
+                result += chunk
+            if kind == "on_parser_stream":
+                print(f"Parser chunk: {event['data']['chunk']}", flush=True)
+        self.step_callback("message", acc, True)
+        result_queue.put(result)
 
     def set_cache_handler(self, cache_handler: CacheHandler) -> None:
         """Set the cache handler for the agent.
