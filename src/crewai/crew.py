@@ -205,6 +205,7 @@ class Crew(BaseModel):
                 f"The process '{self.process}' is not implemented yet."
             )
 
+
         metrics = metrics + [
             agent._token_process.get_summary() for agent in self.agents
         ]

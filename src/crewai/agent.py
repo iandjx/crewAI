@@ -188,6 +188,7 @@ class Agent(BaseModel):
     async def stream_execute(self, task_prompt, result_queue):
         result = ""
         acc = ""
+        chunkId = str(uuid.uuid4())
         first = True
         async for event in self.agent_executor.astream_events(
             {
@@ -201,7 +202,7 @@ class Agent(BaseModel):
             if kind == "on_chat_model_stream":
                 content = event['data']['chunk'].content
                 chunk = repr(content)
-                self.step_callback("message", content, first)
+                self.step_callback("message", content, first, chunkId)
                 first = False
                 print(
                     f"Chat model chunk: {chunk}",
@@ -211,7 +212,7 @@ class Agent(BaseModel):
                 result += chunk
             if kind == "on_parser_stream":
                 print(f"Parser chunk: {event['data']['chunk']}", flush=True)
-        self.step_callback("message", acc, True)
+        self.step_callback("message_complete", acc, False, chunkId)
         result_queue.put(result)
 
     def set_cache_handler(self, cache_handler: CacheHandler) -> None:
