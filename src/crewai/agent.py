@@ -3,6 +3,7 @@ import uuid
 import asyncio
 import threading
 from typing import Any, Dict, List, Optional, Tuple
+from datetime import datetime
 
 from langchain.agents.agent import RunnableAgent
 from langchain.agents.tools import tool as LangChainTool
@@ -176,7 +177,7 @@ class Agent(BaseModel):
         _thread.start()
         _thread.join()
         result = result_queue.get()
-        
+
         if self.max_rpm:
             self._rpm_controller.stop_rpm_counter()
 
@@ -199,21 +200,29 @@ class Agent(BaseModel):
             version="v1",
         ):
             kind = event["event"]
-            if kind == "on_chat_model_stream":
-                content = event['data']['chunk'].content
-                chunk = repr(content)
-                self.step_callback(content, "message", first, chunkId)
-                first = False
-                print(
-                    f"Chat model chunk: {chunk}",
-                    flush=True,
-                )
-                acc += content
-                result += chunk
-            if kind == "on_parser_stream":
-                print(f"Parser chunk: {event['data']['chunk']}", flush=True)
+            print(f"event: {kind}", flush=True)
+            match kind:
+                case "on_chat_model_stream":
+                    content = event['data']['chunk'].content
+                    chunk = repr(content)
+                    self.step_callback(content, "message", first, chunkId, datetime.now().timestamp() * 1000)
+                    first = False
+                    print(f"Text chunkId ({chunkId}): {chunk}", flush=True)
+                    acc += content
+                    result += chunk
+                case "on_parser_stream":
+                    print(f"Parser chunk ({kind}): {event['data']['chunk']}", flush=True)
+                case "on_llm_end":
+                    self.step_callback("", "terminate")
+                case "on_chain_end":
+                    chunkId = str(uuid.uuid4())
+                    first = True
+                    self.step_callback(acc, "message_complete", False, chunkId, datetime.now().timestamp() * 1000)
+                case _:
+                    print(f"Parser chunk ({kind}): unhandled", flush=True)
+
         self.step_callback(acc, "message_complete", False, chunkId)
-        result_queue.put(result)
+        result_queue.put(acc)
 
     def set_cache_handler(self, cache_handler: CacheHandler) -> None:
         """Set the cache handler for the agent.
