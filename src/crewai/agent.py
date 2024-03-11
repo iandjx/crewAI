@@ -202,7 +202,7 @@ class Agent(BaseModel):
             if kind == "on_chat_model_stream":
                 content = event['data']['chunk'].content
                 chunk = repr(content)
-                self.step_callback("message", content, first, chunkId)
+                self.step_callback(content, "message", first, chunkId)
                 first = False
                 print(
                     f"Chat model chunk: {chunk}",
@@ -212,7 +212,7 @@ class Agent(BaseModel):
                 result += chunk
             if kind == "on_parser_stream":
                 print(f"Parser chunk: {event['data']['chunk']}", flush=True)
-        self.step_callback("message_complete", acc, False, chunkId)
+        self.step_callback(acc, "message_complete", False, chunkId)
         result_queue.put(result)
 
     def set_cache_handler(self, cache_handler: CacheHandler) -> None:
