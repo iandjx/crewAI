@@ -172,11 +172,20 @@ class Agent(BaseModel):
         self.agent_executor.tools_description = render_text_description(tools)
         self.agent_executor.tools_names = self.__tools_names(tools)
 
-        result_queue = Queue()
-        _thread = threading.Thread(target=self.wrap_async_func, args=(task_prompt, result_queue))
-        _thread.start()
-        _thread.join()
-        result = result_queue.get()
+        if self.step_callback:
+            result_queue = Queue()
+            _thread = threading.Thread(target=self.wrap_async_func, args=(task_prompt, result_queue))
+            _thread.start()
+            _thread.join()
+            result = result_queue.get()
+
+        result = self.agent_executor.invoke(
+            {
+                "input": task_prompt,
+                "tool_names": self.agent_executor.tools_names,
+                "tools": self.agent_executor.tools_description,
+            }
+        )["output"]
 
         if self.max_rpm:
             self._rpm_controller.stop_rpm_counter()

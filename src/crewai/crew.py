@@ -251,6 +251,7 @@ class Crew(BaseModel):
             tools=AgentTools(agents=self.agents).tools(),
             llm=self.manager_llm,
             verbose=True,
+            step_callback=self.step_callback
         )
 
         task_output = ""
