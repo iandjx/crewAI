@@ -1,5 +1,6 @@
 import os
 import uuid
+import json
 import asyncio
 import threading
 from typing import Any, Dict, List, Optional, Tuple
@@ -215,6 +216,8 @@ class Agent(BaseModel):
             kind = event["event"]
             print(f"{kind}:\n{event}", flush=True)
             match kind:
+
+                # message chunk
                 case "on_chat_model_stream":
                     content = event['data']['chunk'].content
                     chunk = repr(content)
@@ -225,21 +228,44 @@ class Agent(BaseModel):
                     result += chunk
                     # if acc.strip().endswith('Action Input'):
                     #     state = 'STREAMING_ACTION_INPUT' #TODO: enum
+
+                # praser chunk
                 case "on_parser_stream":
                     print(f"Parser chunk ({kind}): {event['data']['chunk']}", flush=True)
+
+                # all done
                 case "on_llm_end":
                     self.step_callback("", "terminate")
+
+                # tool chat message finished
                 case "on_chain_end":
                     chunkId = str(uuid.uuid4())
                     first = True
+                    # state = None
                     self.step_callback(acc, "message_complete", True, chunkId, datetime.now().timestamp() * 1000)
+
+                # tool started being used
                 case "on_tool_start":
-                    self.step_callback("", "message", first, chunkId, datetime.now().timestamp() * 1000, f"Using tool: {event.get('name')}")
+                    # if state != 'RUNNING_TOOL':
+                    #     tool_input_json = event.get('data', {}).get('input', '')
+                    #     if len(tool_input_json) > 0:
+                    #         try:
+                    #             tool_input = json.loads(tool_input_json)
+                    #             self.step_callback(tool_input.get('message') or tool_input, "message_complete", False, chunkId, datetime.now().timestamp() * 1000)
+                    #             state = 'RUNNING_TOOL'
+                    #         except:
+                    #             #ignore, bad tool output
+                    #             pass
+                    self.step_callback("", "message", first, chunkId, datetime.now().timestamp() * 1000, f"🛠️  Using tool: {event.get('name')}")
+
+                # tool finished being used
                 case "on_tool_end":
-                    self.step_callback("", "message", first, chunkId, datetime.now().timestamp() * 1000, f"Finished using tool: {event.get('name')}")
+                    self.step_callback("", "message", first, chunkId, datetime.now().timestamp() * 1000, f"✅ Finished using tool: {event.get('name')}")
+
+                # see https://python.langchain.com/docs/expression_language/streaming#event-reference
                 case _:
                     print(f"unhandled {kind} event", flush=True)
-        # self.step_callback("", "terminate")
+        # self.step_callback("", "terminate") # is this correct?
         result_queue.put(acc)
 
     def set_cache_handler(self, cache_handler: CacheHandler) -> None:
