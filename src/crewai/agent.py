@@ -191,6 +191,10 @@ class Agent(BaseModel):
         acc = ""
         chunkId = str(uuid.uuid4())
         first = True
+
+        #state machine used by us to decide when to do certain custom actions based on strem events
+        # state = None
+
         async for event in self.agent_executor.astream_events(
             {
                 "input": task_prompt,
@@ -200,7 +204,7 @@ class Agent(BaseModel):
             version="v1",
         ):
             kind = event["event"]
-            print(f"event: {kind}", flush=True)
+            print(f"{kind}:\n{event}", flush=True)
             match kind:
                 case "on_chat_model_stream":
                     content = event['data']['chunk'].content
@@ -210,6 +214,8 @@ class Agent(BaseModel):
                     print(f"Text chunkId ({chunkId}): {chunk}", flush=True)
                     acc += content
                     result += chunk
+                    # if acc.strip().endswith('Action Input'):
+                    #     state = 'STREAMING_ACTION_INPUT' #TODO: enum
                 case "on_parser_stream":
                     print(f"Parser chunk ({kind}): {event['data']['chunk']}", flush=True)
                 case "on_llm_end":
@@ -217,11 +223,14 @@ class Agent(BaseModel):
                 case "on_chain_end":
                     chunkId = str(uuid.uuid4())
                     first = True
-                    self.step_callback(acc, "message_complete", False, chunkId, datetime.now().timestamp() * 1000)
+                    self.step_callback(acc, "message_complete", True, chunkId, datetime.now().timestamp() * 1000)
+                case "on_tool_start":
+                    self.step_callback("", "message", first, chunkId, datetime.now().timestamp() * 1000, f"Using tool: {event.get('name')}")
+                case "on_tool_end":
+                    self.step_callback("", "message", first, chunkId, datetime.now().timestamp() * 1000, f"Finished using tool: {event.get('name')}")
                 case _:
-                    print(f"Parser chunk ({kind}): unhandled", flush=True)
-
-        self.step_callback(acc, "message_complete", False, chunkId)
+                    print(f"unhandled {kind} event", flush=True)
+        # self.step_callback("", "terminate")
         result_queue.put(acc)
 
     def set_cache_handler(self, cache_handler: CacheHandler) -> None:
