@@ -44,7 +44,7 @@ os.environ["OPENAI_API_KEY"] = "Your Key"
 # Instantiate tools
 docs_tool = DirectoryReadTool(directory='./blog-posts')
 file_tool = FileReadTool()
-search_tool = SeperDevTool()
+search_tool = SerperDevTool()
 web_rag_tool = WebsiteSearchTool()
 
 # Create agents
@@ -52,7 +52,7 @@ researcher = Agent(
     role='Market Research Analyst',
     goal='Provide up-to-date market analysis of the AI industry',
     backstory='An expert analyst with a keen eye for market trends.',
-    tools=[search_tool, website_rag],
+    tools=[search_tool, web_rag_tool],
     verbose=True
 )
 
@@ -181,7 +181,7 @@ from unstructured.partition.html import partition_html
 
     # Annotate the function with the tool decorator from crewAI
 @tool("Integration with a given API")
-def integtation_tool(argument: str) -> str:
+def integration_tool(argument: str) -> str:
     """Integration with a given API"""
     # Code here
     return resutls # string to be sent back to the agent
@@ -191,7 +191,7 @@ agent = Agent(
     role='Research Analyst',
     goal='Provide up-to-date market analysis',
     backstory='An expert analyst with a keen eye for market trends.',
-    tools=[integtation_tool]
+    tools=[integration_tool]
 )
 ```
 

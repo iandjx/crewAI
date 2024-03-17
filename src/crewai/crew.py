@@ -2,6 +2,7 @@ import json
 import uuid
 from typing import Any, Dict, List, Optional, Union
 
+from langchain_core.callbacks import BaseCallbackHandler
 from pydantic import (
     UUID4,
     BaseModel,
@@ -32,6 +33,7 @@ class Crew(BaseModel):
         tasks: List of tasks assigned to the crew.
         agents: List of agents part of this crew.
         manager_llm: The language model that will run manager agent.
+        manager_callbacks: The callback handlers to be executed by the manager agent when hierarchical process is used
         function_calling_llm: The language model that will run the tool calling for all the agents.
         process: The process flow that the crew will follow (e.g., sequential).
         verbose: Indicates the verbosity level for logging during execution.
@@ -63,6 +65,10 @@ class Crew(BaseModel):
     )
     manager_llm: Optional[Any] = Field(
         description="Language model that will run the agent.", default=None
+    )
+    manager_callbacks: Optional[List[InstanceOf[BaseCallbackHandler]]] = Field(
+        default=None,
+        description="A list of callback handlers to be executed by the manager agent when hierarchical process is used",
     )
     function_calling_llm: Optional[Any] = Field(
         description="Language model that will run the agent.", default=None
@@ -227,15 +233,17 @@ class Crew(BaseModel):
                     task.tools += AgentTools(agents=agents_for_delegation).tools()
 
             role = task.agent.role if task.agent is not None else "None"
-            self._logger.log("debug", f"Working Agent: {role}")
-            self._logger.log("info", f"Starting Task: {task.description}")
+            self._logger.log("debug", f"== Working Agent: {role}", color="bold_yellow")
+            self._logger.log(
+                "info", f"== Starting Task: {task.description}", color="bold_yellow"
+            )
 
             output = task.execute(context=task_output)
             if not task.async_execution:
                 task_output = output
 
             role = task.agent.role if task.agent is not None else "None"
-            self._logger.log("debug", f"[{role}] Task output: {task_output}\n\n")
+            self._logger.log("debug", f"== [{role}] Task output: {task_output}\n\n")
 
         self._finish_execution(task_output)
         return self._format_output(task_output)
@@ -263,9 +271,7 @@ class Crew(BaseModel):
                 agent=manager, context=task_output, tools=manager.tools
             )
 
-            self._logger.log(
-                "debug", f"[{manager.role}] Task output: {task_output}\n\n"
-            )
+            self._logger.log("debug", f"[{manager.role}] Task output: {task_output}")
 
         self._finish_execution(task_output)
         return self._format_output(task_output), manager._token_process.get_summary()
@@ -289,3 +295,6 @@ class Crew(BaseModel):
         if self.max_rpm:
             self._rpm_controller.stop_rpm_counter()
         self._telemetry.end_crew(self, output)
+
+    def __repr__(self):
+        return f"Crew(id={self.id}, process={self.process}, number_of_agents={len(self.agents)}, number_of_tasks={len(self.tasks)})"

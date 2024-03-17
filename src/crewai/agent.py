@@ -11,6 +11,7 @@ from langchain.agents.tools import tool as LangChainTool
 from langchain.memory import ConversationSummaryMemory
 from langchain.tools.render import render_text_description
 from langchain_core.agents import AgentAction
+from langchain_core.callbacks import BaseCallbackHandler
 from langchain_openai import ChatOpenAI
 from pydantic import (
     UUID4,
@@ -41,6 +42,7 @@ class Agent(BaseModel):
             role: The role of the agent.
             goal: The objective of the agent.
             backstory: The backstory of the agent.
+            config: Dict representation of agent configuration.
             llm: The language model that will run the agent.
             function_calling_llm: The language model that will the tool calling for this agent, it overrides the crew function_calling_llm.
             max_iter: Maximum number of iterations for an agent to execute a task.
@@ -50,6 +52,7 @@ class Agent(BaseModel):
             allow_delegation: Whether the agent is allowed to delegate tasks to other agents.
             tools: Tools at agents disposal
             step_callback: Callback to be executed after each step of the agent execution.
+            callbacks: A list of callback functions from the langchain library that are triggered during the agent's execution process
     """
 
     __hash__ = object.__hash__  # type: ignore
@@ -68,6 +71,10 @@ class Agent(BaseModel):
     role: str = Field(description="Role of the agent")
     goal: str = Field(description="Objective of the agent")
     backstory: str = Field(description="Backstory of the agent")
+    config: Optional[Dict[str, Any]] = Field(
+        description="Configuration for the agent",
+        default=None,
+    )
     max_rpm: Optional[int] = Field(
         default=None,
         description="Maximum number of requests per minute for the agent execution to be respected.",
@@ -110,6 +117,13 @@ class Agent(BaseModel):
     function_calling_llm: Optional[Any] = Field(
         description="Language model that will run the agent.", default=None
     )
+    callbacks: Optional[List[InstanceOf[BaseCallbackHandler]]] = Field(
+        default=None, description="Callback to be executed"
+    )
+
+    def __init__(__pydantic_self__, **data):
+        config = data.pop("config", {})
+        super().__init__(**config, **data)
 
     @field_validator("id", mode="before")
     @classmethod
@@ -118,6 +132,14 @@ class Agent(BaseModel):
             raise PydanticCustomError(
                 "may_not_set_field", "This field is not to be set by the user.", {}
             )
+
+    @model_validator(mode="after")
+    def set_attributes_based_on_config(self) -> "Agent":
+        """Set attributes based on the agent configuration."""
+        if self.config:
+            for key, value in self.config.items():
+                setattr(self, key, value)
+        return self
 
     @model_validator(mode="after")
     def set_private_attrs(self):
@@ -315,6 +337,7 @@ class Agent(BaseModel):
             "step_callback": self.step_callback,
             "tools_handler": self.tools_handler,
             "function_calling_llm": self.function_calling_llm,
+            "callbacks": self.callbacks,
         }
 
         if self._rpm_controller:
@@ -388,3 +411,6 @@ class Agent(BaseModel):
     @staticmethod
     def __tools_names(tools) -> str:
         return ", ".join([t.name for t in tools])
+
+    def __repr__(self):
+        return f"Agent(role={self.role}, goal={self.goal}, backstory={self.backstory})"
