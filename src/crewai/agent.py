@@ -223,6 +223,7 @@ class Agent(BaseModel):
         result = ""
         acc = ""
         chunkId = str(uuid.uuid4())
+        tool_chunkId = str(uuid.uuid4())
         first = True
 
         #state machine used by us to decide when to do certain custom actions based on strem events
@@ -237,7 +238,7 @@ class Agent(BaseModel):
             version="v1",
         ):
             kind = event["event"]
-            print(f"{kind}:\n{event}", flush=True)
+            # print(f"{kind}:\n{event}", flush=True)
             match kind:
 
                 # message chunk
@@ -258,10 +259,12 @@ class Agent(BaseModel):
 
                 # all done
                 case "on_llm_end":
+                    # print(f"{kind}:\n{event}", flush=True)
                     self.step_callback("", "terminate")
 
                 # tool chat message finished
                 case "on_chain_end":
+                    # print(f"{kind}:\n{event}", flush=True)
                     chunkId = str(uuid.uuid4())
                     first = True
                     # state = None
@@ -269,6 +272,7 @@ class Agent(BaseModel):
 
                 # tool started being used
                 case "on_tool_start":
+                    print(f"{kind}:\n{event}", flush=True)
                     # if state != 'RUNNING_TOOL':
                     #     tool_input_json = event.get('data', {}).get('input', '')
                     #     if len(tool_input_json) > 0:
@@ -279,11 +283,17 @@ class Agent(BaseModel):
                     #         except:
                     #             #ignore, bad tool output
                     #             pass
-                    self.step_callback("", "message", first, chunkId, datetime.now().timestamp() * 1000, f"🛠️  Using tool: {event.get('name')}")
+                    tool_chunkId = str(uuid.uuid4()) #TODO:
+                    tool_name = event.get('name').replace('_', ' ').capitalize()
+                    self.step_callback(f"🛠️  Using tool: {tool_name}", "message", True, tool_chunkId, datetime.now().timestamp() * 1000, "inline")
+                    # self.step_callback("", "message", False, tool_chunkId, datetime.now().timestamp() * 1000, f"")
 
                 # tool finished being used
                 case "on_tool_end":
-                    self.step_callback("", "message", first, chunkId, datetime.now().timestamp() * 1000, f"✅ Finished using tool: {event.get('name')}")
+                    print(f"{kind}:\n{event}", flush=True)
+                    tool_chunkId = str(uuid.uuid4()) #TODO:
+                    tool_name = event.get('name').replace('_', ' ').capitalize()
+                    self.step_callback(f"✅ Finished using tool: {tool_name}", "message", False, tool_chunkId, datetime.now().timestamp() * 1000, "inline")
 
                 # see https://python.langchain.com/docs/expression_language/streaming#event-reference
                 case _:
