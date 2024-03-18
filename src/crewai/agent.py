@@ -200,15 +200,16 @@ class Agent(BaseModel):
             _thread = threading.Thread(target=self.wrap_async_func, args=(task_prompt, result_queue))
             _thread.start()
             _thread.join()
+            self.step_callback("", "terminate")
             result = result_queue.get()
-
-        result = self.agent_executor.invoke(
-            {
-                "input": task_prompt,
-                "tool_names": self.agent_executor.tools_names,
-                "tools": self.agent_executor.tools_description,
-            }
-        )["output"]
+        else:
+            result = self.agent_executor.invoke(
+                {
+                    "input": task_prompt,
+                    "tool_names": self.agent_executor.tools_names,
+                    "tools": self.agent_executor.tools_description,
+                }
+            )["output"]
 
         if self.max_rpm:
             self._rpm_controller.stop_rpm_counter()
@@ -289,6 +290,7 @@ class Agent(BaseModel):
                     print(f"unhandled {kind} event", flush=True)
         # self.step_callback("", "terminate") # is this correct?
         result_queue.put(acc)
+        # result_queue.put(result)
 
     def set_cache_handler(self, cache_handler: CacheHandler) -> None:
         """Set the cache handler for the agent.
