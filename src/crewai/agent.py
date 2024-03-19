@@ -68,6 +68,7 @@ class Agent(BaseModel):
         frozen=True,
         description="Unique identifier for the object, not set by user.",
     )
+    name: str = Field(description="Name of the agent")
     role: str = Field(description="Role of the agent")
     goal: str = Field(description="Objective of the agent")
     backstory: str = Field(description="Backstory of the agent")
@@ -245,7 +246,15 @@ class Agent(BaseModel):
                 case "on_chat_model_stream":
                     content = event['data']['chunk'].content
                     chunk = repr(content)
-                    self.step_callback(content, "message", first, chunkId, datetime.now().timestamp() * 1000)
+                    self.step_callback(
+                        text=content,
+                        event="message",
+                        first=first,
+                        chunk_id=chunkId,
+                        timestamp=datetime.now().timestamp() * 1000,
+                        display_type="bubble",
+                        author_name=self.name,
+                    )
                     first = False
                     print(f"Text chunkId ({chunkId}): {chunk}", flush=True)
                     acc += content
@@ -268,11 +277,18 @@ class Agent(BaseModel):
                     chunkId = str(uuid.uuid4())
                     first = True
                     # state = None
-                    self.step_callback(acc, "message_complete", True, chunkId, datetime.now().timestamp() * 1000)
+                    self.step_callback(
+                        text=acc,
+                        event="message_complete",
+                        first=True,
+                        chunk_id=chunkId,
+                        timestamp=datetime.now().timestamp() * 1000,
+                        display_type="bubble",
+                        author_name=self.name,
+                    )
 
                 # tool started being used
                 case "on_tool_start":
-                    print(f"{kind}:\n{event}", flush=True)
                     # if state != 'RUNNING_TOOL':
                     #     tool_input_json = event.get('data', {}).get('input', '')
                     #     if len(tool_input_json) > 0:
@@ -285,15 +301,29 @@ class Agent(BaseModel):
                     #             pass
                     tool_chunkId = str(uuid.uuid4()) #TODO:
                     tool_name = event.get('name').replace('_', ' ').capitalize()
-                    self.step_callback(f"🛠️  Using tool: {tool_name}", "message", True, tool_chunkId, datetime.now().timestamp() * 1000, "inline")
-                    # self.step_callback("", "message", False, tool_chunkId, datetime.now().timestamp() * 1000, f"")
+                    self.step_callback(
+                        text=f"🛠️  Using tool: {tool_name}",
+                        event="message",
+                        first=True,
+                        chunk_id=tool_chunkId,
+                        timestamp=datetime.now().timestamp() * 1000,
+                        author_name=self.name,
+                        display_type="inline"
+                    )
 
                 # tool finished being used
                 case "on_tool_end":
-                    print(f"{kind}:\n{event}", flush=True)
                     tool_chunkId = str(uuid.uuid4()) #TODO:
                     tool_name = event.get('name').replace('_', ' ').capitalize()
-                    self.step_callback(f"✅ Finished using tool: {tool_name}", "message", False, tool_chunkId, datetime.now().timestamp() * 1000, "inline")
+                    self.step_callback(
+                        text=f"✅ Finished using tool: {tool_name}",
+                        event="message",
+                        first=True,
+                        chunk_id=tool_chunkId,
+                        timestamp=datetime.now().timestamp() * 1000,
+                        author_name=self.name,
+                        display_type="inline"
+                    )
 
                 # see https://python.langchain.com/docs/expression_language/streaming#event-reference
                 case _:
