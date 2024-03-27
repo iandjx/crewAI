@@ -201,7 +201,6 @@ class Agent(BaseModel):
             _thread = threading.Thread(target=self.wrap_async_func, args=(task_prompt, result_queue))
             _thread.start()
             _thread.join()
-            self.step_callback("", "terminate")
             result = result_queue.get()
         else:
             result = self.agent_executor.invoke(
@@ -229,105 +228,79 @@ class Agent(BaseModel):
 
         #state machine used by us to decide when to do certain custom actions based on strem events
         # state = None
-
-        async for event in self.agent_executor.astream_events(
-            {
-                "input": task_prompt,
-                "tool_names": self.agent_executor.tools_names,
-                "tools": self.agent_executor.tools_description,
-            },
-            version="v1",
-        ):
-            kind = event["event"]
-            # print(f"{kind}:\n{event}", flush=True)
-            match kind:
-
-                # message chunk
-                case "on_chat_model_stream":
-                    content = event['data']['chunk'].content
-                    chunk = repr(content)
-                    self.step_callback(
-                        text=content,
-                        event="message",
-                        first=first,
-                        chunk_id=chunkId,
-                        timestamp=datetime.now().timestamp() * 1000,
-                        display_type="bubble",
-                        author_name=self.name,
-                    )
-                    first = False
-                    print(f"Text chunkId ({chunkId}): {chunk}", flush=True)
-                    acc += content
-                    result += chunk
-                    # if acc.strip().endswith('Action Input'):
-                    #     state = 'STREAMING_ACTION_INPUT' #TODO: enum
-
-                # praser chunk
-                case "on_parser_stream":
-                    print(f"Parser chunk ({kind}): {event['data']['chunk']}", flush=True)
-
-                # all done
-                case "on_llm_end":
+        try:
+            async for event in self.agent_executor.astream_events(
+                {
+                    "input": task_prompt,
+                    "tool_names": self.agent_executor.tools_names,
+                    "tools": self.agent_executor.tools_description,
+                },
+                version="v1",
+            ):
+                    kind = event["event"]
                     # print(f"{kind}:\n{event}", flush=True)
-                    self.step_callback("", "terminate")
+                    match kind:
 
-                # tool chat message finished
-                case "on_chain_end":
-                    # print(f"{kind}:\n{event}", flush=True)
-                    chunkId = str(uuid.uuid4())
-                    first = True
-                    # state = None
-                    self.step_callback(
-                        text=acc,
-                        event="message_complete",
-                        first=True,
-                        chunk_id=chunkId,
-                        timestamp=datetime.now().timestamp() * 1000,
-                        display_type="bubble",
-                        author_name=self.name,
-                    )
+                        # message chunk
+                        case "on_chat_model_stream":
+                            content = event['data']['chunk'].content
+                            chunk = repr(content)
+                            self.step_callback(content, "message", first, chunkId, datetime.now().timestamp() * 1000, "bubble", event["name"])
+                            first = False
+                            print(f"Text chunkId ({chunkId}): {chunk}", flush=True)
+                            acc += content
+                            result += chunk
+                            # if acc.strip().endswith('Action Input'):
+                            #     state = 'STREAMING_ACTION_INPUT' #TODO: enum
 
-                # tool started being used
-                case "on_tool_start":
-                    # if state != 'RUNNING_TOOL':
-                    #     tool_input_json = event.get('data', {}).get('input', '')
-                    #     if len(tool_input_json) > 0:
-                    #         try:
-                    #             tool_input = json.loads(tool_input_json)
-                    #             self.step_callback(tool_input.get('message') or tool_input, "message_complete", False, chunkId, datetime.now().timestamp() * 1000)
-                    #             state = 'RUNNING_TOOL'
-                    #         except:
-                    #             #ignore, bad tool output
-                    #             pass
-                    tool_chunkId = str(uuid.uuid4()) #TODO:
-                    tool_name = event.get('name').replace('_', ' ').capitalize()
-                    self.step_callback(
-                        text=f"🛠️  Using tool: {tool_name}",
-                        event="message",
-                        first=True,
-                        chunk_id=tool_chunkId,
-                        timestamp=datetime.now().timestamp() * 1000,
-                        author_name=self.name,
-                        display_type="inline"
-                    )
+                        # praser chunk
+                        case "on_parser_stream":
+                            print(f"Parser chunk ({kind}): {event['data']['chunk']}", flush=True)
 
-                # tool finished being used
-                case "on_tool_end":
-                    tool_chunkId = str(uuid.uuid4()) #TODO:
-                    tool_name = event.get('name').replace('_', ' ').capitalize()
-                    self.step_callback(
-                        text=f"✅ Finished using tool: {tool_name}",
-                        event="message",
-                        first=True,
-                        chunk_id=tool_chunkId,
-                        timestamp=datetime.now().timestamp() * 1000,
-                        author_name=self.name,
-                        display_type="inline"
-                    )
+                        # all done
+                        case "on_llm_end":
+                            # print(f"{kind}:\n{event}", flush=True)
+                            self.step_callback("", "terminate")
 
-                # see https://python.langchain.com/docs/expression_language/streaming#event-reference
-                case _:
-                    print(f"unhandled {kind} event", flush=True)
+                        # tool chat message finished
+                        case "on_chain_end":
+                            # print(f"{kind}:\n{event}", flush=True)
+                            chunkId = str(uuid.uuid4())
+                            first = True
+                            # state = None
+                            self.step_callback(acc, "message_complete", True, chunkId, datetime.now().timestamp() * 1000, "bubble", event["name"])
+
+                        # tool started being used
+                        case "on_tool_start":
+                            print(f"{kind}:\n{event}", flush=True)
+                            # if state != 'RUNNING_TOOL':
+                            #     tool_input_json = event.get('data', {}).get('input', '')
+                            #     if len(tool_input_json) > 0:
+                            #         try:
+                            #             tool_input = json.loads(tool_input_json)
+                            #             self.step_callback(tool_input.get('message') or tool_input, "message_complete", False, chunkId, datetime.now().timestamp() * 1000)
+                            #             state = 'RUNNING_TOOL'
+                            #         except:
+                            #             #ignore, bad tool output
+                            #             pass
+                            tool_chunkId = str(uuid.uuid4()) #TODO:
+                            tool_name = event.get('name').replace('_', ' ').capitalize()
+                            self.step_callback(f"🛠️  Using tool: {tool_name}", "message", True, tool_chunkId, datetime.now().timestamp() * 1000, "inline", event["name"])
+                            # self.step_callback("", "message", False, tool_chunkId, datetime.now().timestamp() * 1000, f"")
+
+                        # tool finished being used
+                        case "on_tool_end":
+                            print(f"{kind}:\n{event}", flush=True)
+                            tool_chunkId = str(uuid.uuid4()) #TODO:
+                            tool_name = event.get('name').replace('_', ' ').capitalize()
+                            self.step_callback(f"✅ Finished using tool: {tool_name}", "message", False, tool_chunkId, datetime.now().timestamp() * 1000, "inline", event["name"])
+
+                        # see https://python.langchain.com/docs/expression_language/streaming#event-reference
+                        case _:
+                            print(f"unhandled {kind} event", flush=True)
+        except:
+            self.step_callback(f"⛔ An unexpected error occurred.", "message", True, tool_chunkId, datetime.now().timestamp() * 1000, "inline")
+            pass
         # self.step_callback("", "terminate") # is this correct?
         result_queue.put(acc)
         # result_queue.put(result)
