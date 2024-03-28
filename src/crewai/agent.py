@@ -229,7 +229,7 @@ class Agent(BaseModel):
         chunkId = str(uuid.uuid4())
         tool_chunkId = str(uuid.uuid4())
         first = True
-
+        agent_name = ""
         #state machine used by us to decide when to do certain custom actions based on strem events
         # state = None
         try:
@@ -242,14 +242,14 @@ class Agent(BaseModel):
                 version="v1",
             ):
                     kind = event["event"]
-                    # print(f"{kind}:\n{event}", flush=True)
+                    print(f"{kind}:\n{event}", flush=True)
                     match kind:
 
                         # message chunk
                         case "on_chat_model_stream":
                             content = event['data']['chunk'].content
                             chunk = repr(content)
-                            self.step_callback(content, "message", first, chunkId, datetime.now().timestamp() * 1000, "bubble", event["name"])
+                            self.step_callback(content, "message", first, chunkId, datetime.now().timestamp() * 1000, "bubble", agent_name)
                             first = False
                             print(f"Text chunkId ({chunkId}): {chunk}", flush=True)
                             acc += content
@@ -266,13 +266,17 @@ class Agent(BaseModel):
                             # print(f"{kind}:\n{event}", flush=True)
                             self.step_callback("", "terminate")
 
+                        # agent started, get their name
+                        case "on_chain_start":
+                            if not agent_name or len(agent_name) == 0:
+                                agent_name = self.name
+                                # agent_name = event["name"]
+
                         # tool chat message finished
                         case "on_chain_end":
-                            # print(f"{kind}:\n{event}", flush=True)
+                            self.step_callback(acc, "message_complete", True, chunkId, datetime.now().timestamp() * 1000, "bubble", agent_name)
                             chunkId = str(uuid.uuid4())
                             first = True
-                            # state = None
-                            self.step_callback(acc, "message_complete", True, chunkId, datetime.now().timestamp() * 1000, "bubble", event["name"])
 
                         # tool started being used
                         case "on_tool_start":
@@ -289,7 +293,7 @@ class Agent(BaseModel):
                             #             pass
                             tool_chunkId = str(uuid.uuid4()) #TODO:
                             tool_name = event.get('name').replace('_', ' ').capitalize()
-                            self.step_callback(f"🛠️  Using tool: {tool_name}", "message", True, tool_chunkId, datetime.now().timestamp() * 1000, "inline", event["name"])
+                            self.step_callback(f"🛠️  Using tool: {tool_name}", "message", True, tool_chunkId, datetime.now().timestamp() * 1000, "inline")
                             # self.step_callback("", "message", False, tool_chunkId, datetime.now().timestamp() * 1000, f"")
 
                         # tool finished being used
@@ -297,7 +301,7 @@ class Agent(BaseModel):
                             print(f"{kind}:\n{event}", flush=True)
                             tool_chunkId = str(uuid.uuid4()) #TODO:
                             tool_name = event.get('name').replace('_', ' ').capitalize()
-                            self.step_callback(f"✅ Finished using tool: {tool_name}", "message", False, tool_chunkId, datetime.now().timestamp() * 1000, "inline", event["name"])
+                            self.step_callback(f"✅ Finished using tool: {tool_name}", "message", False, tool_chunkId, datetime.now().timestamp() * 1000, "inline")
 
                         # see https://python.langchain.com/docs/expression_language/streaming#event-reference
                         case _:

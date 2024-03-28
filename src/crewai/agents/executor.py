@@ -18,6 +18,7 @@ from crewai.utilities import I18N
 
 class CrewAgentExecutor(AgentExecutor):
     _i18n: I18N = I18N()
+    name: str = ""
     llm: Any = None
     iterations: int = 0
     task: Any = None
