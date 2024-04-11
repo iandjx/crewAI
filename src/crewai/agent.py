@@ -30,7 +30,6 @@ from crewai.memory.contextual.contextual_memory import ContextualMemory
 from crewai.utilities import I18N, Logger, Prompts, RPMController
 from crewai.utilities.token_counter_callback import TokenCalcHandler, TokenProcess
 
-
 class Agent(BaseModel):
     """Represents an agent in a system.
 
@@ -52,6 +51,7 @@ class Agent(BaseModel):
             allow_delegation: Whether the agent is allowed to delegate tasks to other agents.
             tools: Tools at agents disposal
             step_callback: Callback to be executed after each step of the agent execution.
+            stop_generating_check: Callback to be executed every nth chunk to check if generation should be stopped
             callbacks: A list of callback functions from the langchain library that are triggered during the agent's execution process
     """
 
@@ -113,6 +113,10 @@ class Agent(BaseModel):
     step_callback: Optional[Any] = Field(
         default=None,
         description="Callback to be executed after each step of the agent execution.",
+    )
+    stop_generating_check: Optional[Any] = Field(
+        default=None,
+        description="Callback to be executed every nth chunk to check if generation should be stopped",
     )
     i18n: I18N = Field(default=I18N(), description="Internationalization settings.")
     llm: Any = Field(
@@ -254,6 +258,7 @@ class Agent(BaseModel):
         tool_chunkId = str(uuid.uuid4())
         first = True
         agent_name = ""
+        step = 1
         #state machine used by us to decide when to do certain custom actions based on strem events
         # state = None
         try:
@@ -265,6 +270,11 @@ class Agent(BaseModel):
                 },
                 version="v1",
             ):
+                    if self.stop_generating_check():
+                        self.step_callback(f"🛑 Stopped generating.", "message", True, str(uuid.uuid4()), datetime.now().timestamp() * 1000, "inline")
+                        return
+                    step = step + 1
+
                     kind = event["event"]
                     print(f"{kind}:\n{event}", flush=True)
                     match kind:
