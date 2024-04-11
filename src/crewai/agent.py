@@ -270,7 +270,7 @@ class Agent(BaseModel):
                 },
                 version="v1",
             ):
-                    if self.stop_generating_check():
+                    if self.stop_generating_check(step):
                         self.step_callback(f"🛑 Stopped generating.", "message", True, str(uuid.uuid4()), datetime.now().timestamp() * 1000, "inline")
                         return
                     step = step + 1
