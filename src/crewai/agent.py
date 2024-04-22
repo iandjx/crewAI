@@ -29,7 +29,9 @@ from crewai.agents import CacheHandler, CrewAgentExecutor, CrewAgentParser, Tool
 from crewai.memory.contextual.contextual_memory import ContextualMemory
 from crewai.utilities import I18N, Logger, Prompts, RPMController
 from crewai.utilities.token_counter_callback import TokenCalcHandler, TokenProcess
+from agentops.agent import track_agent
 
+@track_agent()
 class Agent(BaseModel):
     """Represents an agent in a system.
 
@@ -60,6 +62,8 @@ class Agent(BaseModel):
     _rpm_controller: RPMController = PrivateAttr(default=None)
     _request_within_rpm_limit: Any = PrivateAttr(default=None)
     _token_process: TokenProcess = TokenProcess()
+    agent_ops_agent_name: str = None
+    agent_ops_agent_id: str = None
 
     formatting_errors: int = 0
     model_config = ConfigDict(arbitrary_types_allowed=True)
@@ -139,6 +143,7 @@ class Agent(BaseModel):
     def __init__(__pydantic_self__, **data):
         config = data.pop("config", {})
         super().__init__(**config, **data)
+        __pydantic_self__.agent_ops_agent_name = __pydantic_self__.role
 
     @field_validator("id", mode="before")
     @classmethod
@@ -171,10 +176,14 @@ class Agent(BaseModel):
         """set agent executor is set."""
         if hasattr(self.llm, "model_name"):
             token_handler = TokenCalcHandler(self.llm.model_name, self._token_process)
-            if isinstance(self.llm.callbacks, list):
+
+            # Ensure self.llm.callbacks is a list
+            if not isinstance(self.llm.callbacks, list):
+                self.llm.callbacks = []
+
+            # Check if an instance of TokenCalcHandler already exists in the list
+            if not any(isinstance(handler, TokenCalcHandler) for handler in self.llm.callbacks):
                 self.llm.callbacks.append(token_handler)
-            else:
-                self.llm.callbacks = [token_handler]
 
         if not self.agent_executor:
             if not self.cache_handler:
