@@ -408,7 +408,7 @@ class Agent(BaseModel):
             "max_execution_time": self.max_execution_time,
             "step_callback": self.step_callback,
             "tools_handler": self.tools_handler,
-            "function_calling_llm": self.function_calling_llm,
+            "function_calling_llm": self.function_calling_llm or self.llm,
             "callbacks": self.callbacks,
         }
 
