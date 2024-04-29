@@ -31,6 +31,9 @@ from crewai.utilities import I18N, Logger, Prompts, RPMController
 from crewai.utilities.token_counter_callback import TokenCalcHandler, TokenProcess
 from agentops.agent import track_agent
 
+import logging
+logging.basicConfig(level=logging.DEBUG)
+
 @track_agent()
 class Agent(BaseModel):
     """Represents an agent in a system.
@@ -285,7 +288,7 @@ class Agent(BaseModel):
                     step = step + 1
 
                     kind = event["event"]
-                    print(f"{kind}:\n{event}", flush=True)
+                    logging.debug(f"{kind}:\n{event}", flush=True)
                     match kind:
 
                         # message chunk
@@ -294,7 +297,7 @@ class Agent(BaseModel):
                             chunk = repr(content)
                             self.step_callback(content, "message", first, chunkId, datetime.now().timestamp() * 1000, "bubble", agent_name)
                             first = False
-                            print(f"Text chunkId ({chunkId}): {chunk}", flush=True)
+                            logging.debug(f"Text chunkId ({chunkId}): {chunk}", flush=True)
                             acc += content
                             result += chunk
                             # if acc.strip().endswith('Action Input'):
@@ -302,11 +305,11 @@ class Agent(BaseModel):
 
                         # praser chunk
                         case "on_parser_stream":
-                            print(f"Parser chunk ({kind}): {event['data']['chunk']}", flush=True)
+                            logging.debug(f"Parser chunk ({kind}): {event['data']['chunk']}", flush=True)
 
                         # all done
                         case "on_llm_end":
-                            # print(f"{kind}:\n{event}", flush=True)
+                            logging.debug(f"{kind}:\n{event}", flush=True)
                             self.step_callback("", "terminate")
 
                         # agent started, get their name
@@ -323,7 +326,7 @@ class Agent(BaseModel):
 
                         # tool started being used
                         case "on_tool_start":
-                            print(f"{kind}:\n{event}", flush=True)
+                            logging.debug(f"{kind}:\n{event}", flush=True)
                             # if state != 'RUNNING_TOOL':
                             #     tool_input_json = event.get('data', {}).get('input', '')
                             #     if len(tool_input_json) > 0:
@@ -341,14 +344,14 @@ class Agent(BaseModel):
 
                         # tool finished being used
                         case "on_tool_end":
-                            print(f"{kind}:\n{event}", flush=True)
+                            logging.debug(f"{kind}:\n{event}", flush=True)
                             tool_chunkId = str(uuid.uuid4()) #TODO:
                             tool_name = event.get('name').replace('_', ' ').capitalize()
                             self.step_callback(f"✅ Finished using tool: {tool_name}", "message", True, tool_chunkId, datetime.now().timestamp() * 1000, "inline")
 
                         # see https://python.langchain.com/docs/expression_language/streaming#event-reference
                         case _:
-                            print(f"unhandled {kind} event", flush=True)
+                            logging.debug(f"unhandled {kind} event", flush=True)
         except Exception as chunk_error:
             tool_chunkId = str(uuid.uuid4()) #TODO:
             # self.step_callback(f"⛔ An unexpected error occurred.", "message", True, tool_chunkId, datetime.now().timestamp() * 1000, "inline")
