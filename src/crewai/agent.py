@@ -32,7 +32,7 @@ from crewai.utilities.token_counter_callback import TokenCalcHandler, TokenProce
 from agentops.agent import track_agent
 
 import logging
-logging.basicConfig(level=logging.DEBUG)
+logging.basicConfig(level=(os.getenv("LOGGING_LEVEL", "debug").lower() or logging.DEBUG))
 
 @track_agent()
 class Agent(BaseModel):
