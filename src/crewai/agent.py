@@ -344,13 +344,15 @@ class Agent(BaseModel):
                             print(f"{kind}:\n{event}", flush=True)
                             tool_chunkId = str(uuid.uuid4()) #TODO:
                             tool_name = event.get('name').replace('_', ' ').capitalize()
-                            self.step_callback(f"✅ Finished using tool: {tool_name}", "message", False, tool_chunkId, datetime.now().timestamp() * 1000, "inline")
+                            self.step_callback(f"✅ Finished using tool: {tool_name}", "message", True, tool_chunkId, datetime.now().timestamp() * 1000, "inline")
 
                         # see https://python.langchain.com/docs/expression_language/streaming#event-reference
                         case _:
                             print(f"unhandled {kind} event", flush=True)
-        except:
-            self.step_callback(f"⛔ An unexpected error occurred.", "message", True, tool_chunkId, datetime.now().timestamp() * 1000, "inline")
+        except Exception as chunk_error:
+            tool_chunkId = str(uuid.uuid4()) #TODO:
+            # self.step_callback(f"⛔ An unexpected error occurred.", "message", True, tool_chunkId, datetime.now().timestamp() * 1000, "inline")
+            self.step_callback(f"⛔ An unexpected error occurred: {chunk_error}", "message", True, tool_chunkId, datetime.now().timestamp() * 1000, "inline")
             pass
         # self.step_callback("", "terminate") # is this correct?
         result_queue.put(acc)
