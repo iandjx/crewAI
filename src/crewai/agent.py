@@ -353,7 +353,11 @@ class Agent(BaseModel):
                         case _:
                             logging.debug(f"unhandled {kind} event", flush=True)
         except Exception as chunk_error:
+            import sys, traceback
+            exc_type, exc_value, exc_traceback = sys.exc_info()
+            err_lines = traceback.format_exception(exc_type, exc_value, exc_traceback)
             tool_chunkId = str(uuid.uuid4()) #TODO:
+            logging.error(err_lines)
             # self.step_callback(f"⛔ An unexpected error occurred.", "message", True, tool_chunkId, datetime.now().timestamp() * 1000, "inline")
             self.step_callback(f"⛔ An unexpected error occurred: {chunk_error}", "message", True, tool_chunkId, datetime.now().timestamp() * 1000, "inline")
             pass
