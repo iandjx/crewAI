@@ -271,8 +271,6 @@ class Agent(BaseModel):
         first = True
         agent_name = ""
         step = 1
-        #state machine used by us to decide when to do certain custom actions based on strem events
-        # state = None
         try:
             async for event in self.agent_executor.astream_events(
                 {
@@ -300,8 +298,6 @@ class Agent(BaseModel):
                             logging.debug(f"Text chunkId ({chunkId}): {chunk}", flush=True)
                             acc += content
                             result += chunk
-                            # if acc.strip().endswith('Action Input'):
-                            #     state = 'STREAMING_ACTION_INPUT' #TODO: enum
 
                         # praser chunk
                         case "on_parser_stream":
@@ -327,27 +323,16 @@ class Agent(BaseModel):
                         # tool started being used
                         case "on_tool_start":
                             logging.debug(f"{kind}:\n{event}", flush=True)
-                            # if state != 'RUNNING_TOOL':
-                            #     tool_input_json = event.get('data', {}).get('input', '')
-                            #     if len(tool_input_json) > 0:
-                            #         try:
-                            #             tool_input = json.loads(tool_input_json)
-                            #             self.step_callback(tool_input.get('message') or tool_input, "message_complete", False, chunkId, datetime.now().timestamp() * 1000)
-                            #             state = 'RUNNING_TOOL'
-                            #         except:
-                            #             #ignore, bad tool output
-                            #             pass
                             tool_chunkId = str(uuid.uuid4()) #TODO:
                             tool_name = event.get('name').replace('_', ' ').capitalize()
-                            self.step_callback(f"🛠️  Using tool: {tool_name}", "message", True, tool_chunkId, datetime.now().timestamp() * 1000, "inline")
-                            # self.step_callback("", "message", False, tool_chunkId, datetime.now().timestamp() * 1000, f"")
+                            self.step_callback(f"Using tool: {tool_name}", "message", True, tool_chunkId, datetime.now().timestamp() * 1000, "inline")
 
                         # tool finished being used
                         case "on_tool_end":
                             logging.debug(f"{kind}:\n{event}", flush=True)
-                            tool_chunkId = str(uuid.uuid4()) #TODO:
                             tool_name = event.get('name').replace('_', ' ').capitalize()
-                            self.step_callback(f"✅ Finished using tool: {tool_name}", "message", True, tool_chunkId, datetime.now().timestamp() * 1000, "inline")
+                            self.step_callback(f"Finished using tool: {tool_name}", "message_complete", True, tool_chunkId, datetime.now().timestamp() * 1000, "inline")
+                            tool_chunkId = str(uuid.uuid4())
 
                         # see https://python.langchain.com/docs/expression_language/streaming#event-reference
                         case _:
@@ -356,14 +341,17 @@ class Agent(BaseModel):
             import sys, traceback
             exc_type, exc_value, exc_traceback = sys.exc_info()
             err_lines = traceback.format_exception(exc_type, exc_value, exc_traceback)
-            tool_chunkId = str(uuid.uuid4()) #TODO:
             logging.error(err_lines)
-            # self.step_callback(f"⛔ An unexpected error occurred.", "message", True, tool_chunkId, datetime.now().timestamp() * 1000, "inline")
-            self.step_callback(f"⛔ An unexpected error occurred: {chunk_error}", "message", True, tool_chunkId, datetime.now().timestamp() * 1000, "inline")
+            tool_chunkId = str(uuid.uuid4())
+            self.step_callback(f"⛔ An unexpected error occurred", "message", True, str(uuid.uuid4()), datetime.now().timestamp() * 1000, "inline")
+            #TODO: if debug:
+            self.step_callback(f"""Stack trace:
+```
+{chunk_error}
+```
+""", "message", True, str(uuid.uuid4()), datetime.now().timestamp() * 1000, "bubble")
             pass
-        # self.step_callback("", "terminate") # is this correct?
         result_queue.put(acc)
-        # result_queue.put(result)
 
     def set_cache_handler(self, cache_handler: CacheHandler) -> None:
         """Set the cache handler for the agent.
