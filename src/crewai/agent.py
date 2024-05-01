@@ -316,7 +316,7 @@ class Agent(BaseModel):
 
                         # tool chat message finished
                         case "on_chain_end":
-                            self.step_callback(acc, "message_complete", True, chunkId, datetime.now().timestamp() * 1000, "bubble", agent_name)
+                            # self.step_callback(acc, "message", True, chunkId, datetime.now().timestamp() * 1000, "bubble", agent_name)
                             chunkId = str(uuid.uuid4())
                             first = True
 
@@ -331,8 +331,7 @@ class Agent(BaseModel):
                         case "on_tool_end":
                             logging.debug(f"{kind}:\n{event}", flush=True)
                             tool_name = event.get('name').replace('_', ' ').capitalize()
-                            self.step_callback(f"Finished using tool: {tool_name}", "message_complete", True, tool_chunkId, datetime.now().timestamp() * 1000, "inline")
-                            tool_chunkId = str(uuid.uuid4())
+                            self.step_callback(f"Finished using tool: {tool_name}", "message", True, tool_chunkId, datetime.now().timestamp() * 1000, "inline", None, True)
 
                         # see https://python.langchain.com/docs/expression_language/streaming#event-reference
                         case _:
@@ -343,6 +342,7 @@ class Agent(BaseModel):
             err_lines = traceback.format_exception(exc_type, exc_value, exc_traceback)
             logging.error(err_lines)
             tool_chunkId = str(uuid.uuid4())
+            # chunkId = str(uuid.uuid4())
             self.step_callback(f"⛔ An unexpected error occurred", "message", True, str(uuid.uuid4()), datetime.now().timestamp() * 1000, "inline")
             #TODO: if debug:
             self.step_callback(f"""Stack trace:
