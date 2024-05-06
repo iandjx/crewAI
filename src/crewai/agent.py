@@ -29,12 +29,10 @@ from crewai.agents import CacheHandler, CrewAgentExecutor, CrewAgentParser, Tool
 from crewai.memory.contextual.contextual_memory import ContextualMemory
 from crewai.utilities import I18N, Logger, Prompts, RPMController
 from crewai.utilities.token_counter_callback import TokenCalcHandler, TokenProcess
-from agentops.agent import track_agent
 
 import logging
 logging.basicConfig(level=(os.getenv("LOGGING_LEVEL", "debug").lower() or logging.DEBUG))
 
-@track_agent()
 class Agent(BaseModel):
     """Represents an agent in a system.
 
@@ -65,8 +63,6 @@ class Agent(BaseModel):
     _rpm_controller: RPMController = PrivateAttr(default=None)
     _request_within_rpm_limit: Any = PrivateAttr(default=None)
     _token_process: TokenProcess = TokenProcess()
-    agent_ops_agent_name: str = None
-    agent_ops_agent_id: str = None
 
     formatting_errors: int = 0
     model_config = ConfigDict(arbitrary_types_allowed=True)
@@ -138,6 +134,15 @@ class Agent(BaseModel):
     callbacks: Optional[List[InstanceOf[BaseCallbackHandler]]] = Field(
         default=None, description="Callback to be executed"
     )
+    system_template: Optional[str] = Field(
+        default=None, description="System format for the agent."
+    )
+    prompt_template: Optional[str] = Field(
+        default=None, description="Prompt format for the agent."
+    )
+    response_template: Optional[str] = Field(
+        default=None, description="Response format for the agent."
+    )
 
     _original_role: str | None = None
     _original_goal: str | None = None
@@ -146,7 +151,6 @@ class Agent(BaseModel):
     def __init__(__pydantic_self__, **data):
         config = data.pop("config", {})
         super().__init__(**config, **data)
-        __pydantic_self__.agent_ops_agent_name = __pydantic_self__.role
 
     @field_validator("id", mode="before")
     @classmethod
@@ -185,7 +189,9 @@ class Agent(BaseModel):
                 self.llm.callbacks = []
 
             # Check if an instance of TokenCalcHandler already exists in the list
-            if not any(isinstance(handler, TokenCalcHandler) for handler in self.llm.callbacks):
+            if not any(
+                isinstance(handler, TokenCalcHandler) for handler in self.llm.callbacks
+            ):
                 self.llm.callbacks.append(token_handler)
 
         if not self.agent_executor:
@@ -419,7 +425,13 @@ class Agent(BaseModel):
                 "request_within_rpm_limit"
             ] = self._rpm_controller.check_or_wait
 
-        prompt = Prompts(i18n=self.i18n, tools=tools).task_execution()
+        prompt = Prompts(
+            i18n=self.i18n,
+            tools=tools,
+            system_template=self.system_template,
+            prompt_template=self.prompt_template,
+            response_template=self.response_template,
+        ).task_execution()
 
         execution_prompt = prompt.partial(
             goal=self.goal,
@@ -427,7 +439,13 @@ class Agent(BaseModel):
             backstory=self.backstory,
         )
 
-        bind = self.llm.bind(stop=[self.i18n.slice("observation")])
+        stop_words = [self.i18n.slice("observation")]
+        if self.response_template:
+            stop_words.append(
+                self.response_template.split("{{ .Response }}")[1].strip()
+            )
+
+        bind = self.llm.bind(stop=stop_words)
         inner_agent = agent_args | execution_prompt | bind | CrewAgentParser(agent=self)
         self.agent_executor = CrewAgentExecutor(
             agent=RunnableAgent(runnable=inner_agent), **executor_args
