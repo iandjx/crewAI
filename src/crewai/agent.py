@@ -322,7 +322,7 @@ class Agent(BaseModel):
 
                         # tool started being used
                         case "on_tool_start":
-                            logging.debug(f"{kind}:\n{event}", flush=True)
+                            logging.info(f"{kind}:\n{event}", flush=True)
                             tool_chunkId = str(uuid.uuid4()) #TODO:
                             tool_name = event.get('name').replace('_', ' ').capitalize()
                             self.step_callback(f"Using tool: {tool_name}", "message", True, tool_chunkId, datetime.now().timestamp() * 1000, "inline")
@@ -332,7 +332,12 @@ class Agent(BaseModel):
                             logging.debug(f"{kind}:\n{event}", flush=True)
                             tool_name = event.get('name').replace('_', ' ').capitalize()
                             self.step_callback(f"Finished using tool: {tool_name}", "message", True, tool_chunkId, datetime.now().timestamp() * 1000, "inline", None, True)
-
+                            if tool_name == '_Exception' or tool_name == 'invalid_tool':
+                                self.step_callback(f"""Tool usage failed:
+```
+{JSON.dumps(event.get('data'), indent=4)}
+```
+""", "message", True, str(uuid.uuid4()), datetime.now().timestamp() * 1000, "bubble")
                         # see https://python.langchain.com/docs/expression_language/streaming#event-reference
                         case _:
                             logging.debug(f"unhandled {kind} event", flush=True)
