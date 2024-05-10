@@ -248,7 +248,7 @@ class Agent(BaseModel):
 
         if self.step_callback:
             result_queue = Queue()
-            _thread = threading.Thread(target=self.wrap_async_func, args=(task_prompt, result_queue))
+            _thread = threading.Thread(target=self.wrap_async_func, args=(task, result_queue))
             _thread.start()
             _thread.join()
             result = result_queue.get()
@@ -269,15 +269,18 @@ class Agent(BaseModel):
     def wrap_async_func(self, args, queue):
         asyncio.run(self.stream_execute(args, queue))
 
-    async def stream_execute(self, task_prompt, result_queue):
+    async def stream_execute(self, task, result_queue):
+        task_prompt = task.prompt()
         result = ""
         acc = ""
         chunkId = str(uuid.uuid4())
+        task_chunkId = str(uuid.uuid4())
         tool_chunkId = str(uuid.uuid4())
         first = True
         agent_name = ""
         step = 1
         try:
+            self.step_callback(f"""**Running task**: {task.name} **Available tools**: {self.agent_executor.tools_names}""", "message", True, task_chunkId, datetime.now().timestamp() * 1000, "inline")
             async for event in self.agent_executor.astream_events(
                 {
                     "input": task_prompt,
@@ -338,7 +341,7 @@ class Agent(BaseModel):
                             logging.debug(f"{kind}:\n{event}", flush=True)
                             tool_name = event.get('name').replace('_', ' ').capitalize()
                             self.step_callback(f"Finished using tool: {tool_name}", "message", True, tool_chunkId, datetime.now().timestamp() * 1000, "inline", None, True)
-                            if tool_name == '_Exception' or tool_name == 'invalid_tool':
+                            if tool_name == '_Exception' or tool_name == 'exception' or tool_name == 'invalid_tool':
                                 self.step_callback(f"""Tool usage failed:
 ```
 {JSON.dumps(event.get('data'), indent=4)}
@@ -347,6 +350,7 @@ class Agent(BaseModel):
                         # see https://python.langchain.com/docs/expression_language/streaming#event-reference
                         case _:
                             logging.debug(f"unhandled {kind} event", flush=True)
+            self.step_callback(f"**Completed task**", "message", True, task_chunkId, datetime.now().timestamp() * 1000, "inline", None, True)
         except Exception as chunk_error:
             import sys, traceback
             exc_type, exc_value, exc_traceback = sys.exc_info()

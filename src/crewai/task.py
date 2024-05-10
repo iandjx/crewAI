@@ -43,6 +43,7 @@ class Task(BaseModel):
     i18n: I18N = I18N()
     thread: threading.Thread = None
     prompt_context: Optional[str] = None
+    name: Optional[str] = Field(description="Name of the actual task.")
     description: str = Field(description="Description of the actual task.")
     expected_output: str = Field(
         description="Clear definition of expected output for the task."
