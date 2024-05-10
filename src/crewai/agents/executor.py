@@ -24,6 +24,7 @@ from crewai.utilities.evaluators.task_evaluator import TaskEvaluator
 from langchain_core.callbacks import (
     AsyncCallbackManagerForChainRun,
 )
+from langchain.agents.tools import InvalidTool
 
 
 class CrewAgentExecutor(AgentExecutor):
