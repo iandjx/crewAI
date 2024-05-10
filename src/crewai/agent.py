@@ -248,7 +248,7 @@ class Agent(BaseModel):
 
         if self.step_callback:
             result_queue = Queue()
-            _thread = threading.Thread(target=self.wrap_async_func, args=(task, result_queue))
+            _thread = threading.Thread(target=self.wrap_async_func, args=(task_prompt, task.name, result_queue))
             _thread.start()
             _thread.join()
             result = result_queue.get()
@@ -269,8 +269,7 @@ class Agent(BaseModel):
     def wrap_async_func(self, args, queue):
         asyncio.run(self.stream_execute(args, queue))
 
-    async def stream_execute(self, task, result_queue):
-        task_prompt = task.prompt()
+    async def stream_execute(self, task_prompt, task_name, result_queue):
         result = ""
         acc = ""
         chunkId = str(uuid.uuid4())
@@ -280,7 +279,7 @@ class Agent(BaseModel):
         agent_name = ""
         step = 1
         try:
-            self.step_callback(f"""**Running task**: {task.name} **Available tools**: {self.agent_executor.tools_names}""", "message", True, task_chunkId, datetime.now().timestamp() * 1000, "inline")
+            self.step_callback(f"""**Running task**: {task_name} **Available tools**: {self.agent_executor.tools_names}""", "message", True, task_chunkId, datetime.now().timestamp() * 1000, "inline")
             async for event in self.agent_executor.astream_events(
                 {
                     "input": task_prompt,
