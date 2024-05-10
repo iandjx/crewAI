@@ -1,7 +1,6 @@
 import threading
 import time
 from typing import Any, Dict, Iterator, List, Optional, Tuple, Union
-from difflib import get_close_matches
 
 from langchain.agents import AgentExecutor
 from langchain.agents.agent import ExceptionTool
@@ -21,11 +20,6 @@ from crewai.tools.tool_usage import ToolUsage, ToolUsageErrorException
 from crewai.utilities import I18N
 from crewai.utilities.converter import ConverterError
 from crewai.utilities.evaluators.task_evaluator import TaskEvaluator
-from langchain_core.callbacks import (
-    AsyncCallbackManagerForChainRun,
-)
-from langchain.agents.tools import InvalidTool
-
 
 class CrewAgentExecutor(AgentExecutor):
     _i18n: I18N = I18N()
@@ -104,74 +98,6 @@ class CrewAgentExecutor(AgentExecutor):
                     relationships="\n".join([f"- {r}" for r in entity.relationships]),
                 )
                 self.crew._entity_memory.save(entity_memory)
-
-
-    async def _aperform_agent_action(
-        self,
-        name_to_tool_map: Dict[str, BaseTool],
-        color_mapping: Dict[str, str],
-        agent_action: AgentAction,
-        run_manager: Optional[AsyncCallbackManagerForChainRun] = None,
-    ) -> AgentStep:
-        if run_manager:
-            await run_manager.on_agent_action(
-                agent_action, verbose=self.verbose, color="green"
-            )
-        # Otherwise we lookup the tool
-        if agent_action.tool in name_to_tool_map:
-            tool = name_to_tool_map[agent_action.tool]
-            return_direct = tool.return_direct
-            color = color_mapping[agent_action.tool]
-            tool_run_kwargs = self.agent.tool_run_logging_kwargs()
-            if return_direct:
-                tool_run_kwargs["llm_prefix"] = ""
-            # We then call the tool on the tool input to get an observation
-            observation = await tool.arun(
-                agent_action.tool_input,
-                verbose=self.verbose,
-                color=color,
-                callbacks=run_manager.get_child() if run_manager else None,
-                **tool_run_kwargs,
-            )
-        else:
-            # Attempt to find a close match
-            tool_names: List[str] = list(name_to_tool_map.keys())
-            similar_tools = get_close_matches(agent_action.tool, tool_names, n=1, cutoff=0.6)
-            print(f"""
-Tool "{agent_action.tool}" exact match not found, attempting to find the right tool...
-tool_names: {tool_names}
-similar_tools: {similar_tools}
-""")
-            if similar_tools:
-                closest_tool = similar_tools[0]
-                tool = name_to_tool_map[closest_tool]
-                return_direct = tool.return_direct
-                color = color_mapping[closest_tool]
-                tool_run_kwargs = self.agent.tool_run_logging_kwargs()
-                if return_direct:
-                    tool_run_kwargs['llm_prefix'] = ''
-                # Call the closest matching tool to get an observation
-                observation = await tool.arun(
-                    agent_action.tool_input,
-                    verbose=self.verbose,
-                    color=color,
-                    callbacks=run_manager.get_child() if run_manager else None,
-                    **tool_run_kwargs,
-                )
-            else:
-                tool_run_kwargs = self.agent.tool_run_logging_kwargs()
-                observation = await InvalidTool().arun(
-                    {
-                        "requested_tool_name": agent_action.tool,
-                        "available_tool_names": list(name_to_tool_map.keys()),
-                    },
-                    verbose=self.verbose,
-                    color=None,
-                    callbacks=run_manager.get_child() if run_manager else None,
-                    **tool_run_kwargs,
-                )
-        return AgentStep(action=agent_action, observation=observation)
-
 
     def _call(
         self,
