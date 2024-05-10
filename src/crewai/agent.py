@@ -266,8 +266,8 @@ class Agent(BaseModel):
 
         return result
 
-    def wrap_async_func(self, args, queue):
-        asyncio.run(self.stream_execute(args, queue))
+    def wrap_async_func(self, task_prompt, task_name, queue):
+        asyncio.run(self.stream_execute(task_prompt, task_name, queue))
 
     async def stream_execute(self, task_prompt, task_name, result_queue):
         result = ""
