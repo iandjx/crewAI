@@ -13,7 +13,7 @@ MISSING_ACTION_AFTER_THOUGHT_ERROR_MESSAGE = "I did it wrong. Invalid Format: I 
 MISSING_ACTION_INPUT_AFTER_ACTION_ERROR_MESSAGE = "I did it wrong. Invalid Format: I missed the 'Action Input:' after 'Action:'. I will do right next, and don't use a tool I have already used.\n"
 FINAL_ANSWER_AND_PARSABLE_ACTION_ERROR_MESSAGE = "I did it wrong. Tried to both perform Action and give a Final Answer at the same time, I must do one or the other"
 
-GEMINI_FALSE_POSITIVE_FINAL_ANSWER_PATTERN = re.compile('Final Answer:\s*\\n\\n\*\*\(.*\)\*\*')
+GEMINI_FALSE_POSITIVE_FINAL_ANSWER_PATTERN = re.compile('Final Answer[\s:\\n*]*\(.*\)\*?\*?')
 
 
 class GeminiAgentParser(CrewAgentParser):
