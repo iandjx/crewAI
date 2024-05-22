@@ -3,14 +3,16 @@ import uuid
 import json
 import asyncio
 import threading
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple, Type
 from datetime import datetime
 
 from langchain.agents.agent import RunnableAgent
+from langchain.agents.output_parsers import ReActSingleInputOutputParser
 from langchain.agents.tools import tool as LangChainTool
 from langchain.tools.render import render_text_description
 from langchain_core.agents import AgentAction
 from langchain_core.callbacks import BaseCallbackHandler
+from langchain_core.language_models import BaseLanguageModel
 from langchain_openai import ChatOpenAI
 from pydantic import (
     UUID4,
@@ -26,6 +28,7 @@ from pydantic_core import PydanticCustomError
 
 from queue import Queue
 from crewai.agents import CacheHandler, CrewAgentExecutor, CrewAgentParser, ToolsHandler
+from crewai.agents.custom_parsers import GeminiAgentParser
 from crewai.memory.contextual.contextual_memory import ContextualMemory
 from crewai.utilities import I18N, Logger, Prompts, RPMController
 from crewai.utilities.token_counter_callback import TokenCalcHandler, TokenProcess
@@ -343,7 +346,7 @@ class Agent(BaseModel):
                             if tool_name == '_Exception' or tool_name == 'exception' or tool_name == 'invalid_tool':
                                 self.step_callback(f"""Tool usage failed:
 ```
-{JSON.dumps(event.get('data'), indent=4)}
+{json.dumps(event.get('data'), indent=4)}
 ```
 """, "message", True, str(uuid.uuid4()), datetime.now().timestamp() * 1000, "bubble")
                         # see https://python.langchain.com/docs/expression_language/streaming#event-reference
@@ -449,10 +452,20 @@ class Agent(BaseModel):
             )
 
         bind = self.llm.bind(stop=stop_words)
-        inner_agent = agent_args | execution_prompt | bind | CrewAgentParser(agent=self)
+
+        parser_class = self.get_parser_class_for_llm()
+        inner_agent = agent_args | execution_prompt | bind | parser_class(agent=self)
+
         self.agent_executor = CrewAgentExecutor(
             agent=RunnableAgent(runnable=inner_agent), **executor_args
         )
+
+    def get_parser_class_for_llm(self) -> Type[ReActSingleInputOutputParser]:
+        return GeminiAgentParser if self._llm_is_gemini() else CrewAgentParser
+
+    def _llm_is_gemini(self) -> bool:
+        # not using isinstance() to avoid import and dependency on langchain-google-vertexai
+        return "model_name='gemini" in str(self.llm)
 
     def interpolate_inputs(self, inputs: Dict[str, Any]) -> None:
         """Interpolate inputs into the agent description and backstory."""
