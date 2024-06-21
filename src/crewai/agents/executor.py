@@ -207,8 +207,8 @@ similar_tools: {similar_tools}
                     run_manager=run_manager,
                 )
 
-                if self.step_callback:
-                    self.step_callback(next_step_output)
+                # if self.step_callback:
+                #     self.step_callback(next_step_output)
 
                 if isinstance(next_step_output, AgentFinish):
                     # Creating long term memory
