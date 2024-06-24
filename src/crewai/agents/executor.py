@@ -253,6 +253,8 @@ similar_tools: {similar_tools}
         Override this to take control of how the agent makes and acts on choices.
         """
         try:
+            if self.stop_generating_check():
+                return
             if self._should_force_answer():
                 error = self._i18n.errors("force_final_answer")
                 output = AgentAction("_Exception", error, error)

@@ -59,7 +59,7 @@ class Agent(BaseModel):
             allow_delegation: Whether the agent is allowed to delegate tasks to other agents.
             tools: Tools at agents disposal
             step_callback: Callback to be executed after each step of the agent execution.
-            stop_generating_check: Callback to be executed every nth chunk to check if generation should be stopped
+            stop_generating_check: Function that returns whether generation should be stopped
             callbacks: A list of callback functions from the langchain library that are triggered during the agent's execution process
     """
 
@@ -124,7 +124,7 @@ class Agent(BaseModel):
     )
     stop_generating_check: Optional[Any] = Field(
         default=None,
-        description="Callback to be executed every nth chunk to check if generation should be stopped",
+        description="Function that returns whether generation should be stopped",
     )
     i18n: I18N = Field(default=I18N(), description="Internationalization settings.")
     llm: Any = Field(
@@ -322,6 +322,7 @@ class Agent(BaseModel):
             "max_execution_time": self.max_execution_time,
             "step_callback": self.step_callback,
             "tools_handler": self.tools_handler,
+            "stop_generating_check": self.stop_generating_check,
             "function_calling_llm": self.function_calling_llm or self.llm,
             "callbacks": self.callbacks,
         }
