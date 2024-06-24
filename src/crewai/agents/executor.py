@@ -46,6 +46,7 @@ class CrewAgentExecutor(AgentExecutor):
     have_forced_answer: bool = False
     force_answer_max_iterations: Optional[int] = None
     step_callback: Optional[Any] = None
+    stop_generating_check: Optional[Any] = None
     system_template: Optional[str] = None
     prompt_template: Optional[str] = None
     response_template: Optional[str] = None
