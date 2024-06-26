@@ -38,15 +38,38 @@ class ToolsHandler:
 
     def on_tool_start(self, tool_name: str):
         self.tool_chunkId = str(uuid.uuid4())
-        self.send_to_socket(f"Using tool: {tool_name.capitalize()}", "message", True, self.tool_chunkId, datetime.now().timestamp() * 1000, "inline")
+        self.send_to_socket(
+            text=f"Using tool: {tool_name.capitalize()}",
+            event="message",
+            first=True,
+            chunk_id=self.tool_chunkId,
+            timestamp=datetime.now().timestamp() * 1000,
+            display_type="inline"
+        )
 
     def on_tool_end(self, tool_name: str):
-        self.send_to_socket(f"Finished using tool: {tool_name.capitalize()}", "message", True, self.tool_chunkId, datetime.now().timestamp() * 1000, "inline", None, True)
+        self.send_to_socket(
+            text=f"Finished using tool: {tool_name.capitalize()}",
+            event="message",
+            first=True,
+            chunk_id=self.tool_chunkId,
+            timestamp=datetime.now().timestamp() * 1000,
+            display_type="inline",
+            overwrite=True
+        )
 
     def on_tool_error(self, error_msg: str):
-        self.send_to_socket(f"""Tool usage failed:
+        self.send_to_socket(
+            text=f"""Tool usage failed:
 ```
 {error_msg}
 ```
-""", "message", True, str(uuid.uuid4()), datetime.now().timestamp() * 1000, "bubble")
+""",
+            event="message",
+            first=True,
+            chunk_id=self.tool_chunkId,
+            timestamp=datetime.now().timestamp() * 1000,
+            display_type="bubble",
+            overwrite=True
+        )
 
