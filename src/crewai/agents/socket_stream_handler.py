@@ -15,8 +15,15 @@ class SocketStreamHandler(BaseCallbackHandler):
         self.chunkId = str(uuid.uuid4())
         self.task_chunkId = str(uuid.uuid4())
         self.first = True
-        self.send_to_socket(f"""**Running task**: {task_name} **Available tools**: {tools_names}""", "message", self.first, self.task_chunkId, datetime.now().timestamp() * 1000, "inline")
-        
+        self.send_to_socket(
+            text=f"""**Running task**: {task_name} **Available tools**: {tools_names}""",
+            event="message",
+            first=self.first,
+            chunk_id=self.task_chunkId,
+            timestamp=datetime.now().timestamp() * 1000,
+            display_type="inline"
+        )
+
     def on_chain_end(
             self,
             outputs: Dict[str, Any],
@@ -38,7 +45,10 @@ class SocketStreamHandler(BaseCallbackHandler):
             tags: Optional[List[str]] = None,
             **kwargs: Any,
     ) -> None:
-        self.send_to_socket("", "terminate")
+        self.send_to_socket(
+            text="",
+            event="terminate"
+        )
 
     def on_llm_new_token(
             self,
@@ -51,4 +61,12 @@ class SocketStreamHandler(BaseCallbackHandler):
             **kwargs: Any,
     ) -> None:
         if token:
-            self.send_to_socket(token, "message", True, self.chunkId, datetime.now().timestamp() * 1000, "bubble", self.agent_name)
+            self.send_to_socket(
+                text=token,
+                event="message",
+                first=True,
+                chunk_id=self.chunkId,
+                timestamp=datetime.now().timestamp() * 1000,
+                display_type="bubble",
+                author_name=self.agent_name
+            )
