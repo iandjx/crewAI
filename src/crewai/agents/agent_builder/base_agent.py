@@ -118,6 +118,10 @@ class BaseAgent(ABC, BaseModel):
     tools_handler: InstanceOf[ToolsHandler] = Field(
         default=None, description="An instance of the ToolsHandler class."
     )
+    step_callback: Optional[Any] = Field(
+        default=None,
+        description="Callback to be executed after each step of the agent execution.",
+    )
 
     _original_role: str | None = None
     _original_goal: str | None = None
@@ -242,7 +246,7 @@ class BaseAgent(ABC, BaseModel):
         Args:
             cache_handler: An instance of the CacheHandler class.
         """
-        self.tools_handler = ToolsHandler()
+        self.tools_handler = ToolsHandler(socket_write_fn=self.step_callback)
         if self.cache:
             self.cache_handler = cache_handler
             self.tools_handler.cache = cache_handler

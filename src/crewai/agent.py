@@ -66,7 +66,7 @@ class Agent(BaseAgent):
             allow_code_execution: Enable code execution for the agent.
             max_retry_limit: Maximum number of retries for an agent to execute a task when an error occurs.
     """
-
+    name: str = Field(description="Name of the agent")
     _times_executed: int = PrivateAttr(default=0)
     max_execution_time: Optional[int] = Field(
         default=None,
@@ -76,10 +76,6 @@ class Agent(BaseAgent):
     agent_ops_agent_id: str = None  # type: ignore # Incompatible types in assignment (expression has type "None", variable has type "str")
     cache_handler: InstanceOf[CacheHandler] = Field(
         default=None, description="An instance of the CacheHandler class."
-    )
-    step_callback: Optional[Any] = Field(
-        default=None,
-        description="Callback to be executed after each step of the agent execution.",
     )
     stop_generating_check: Optional[Any] = Field(
         default=None,
