@@ -1,41 +1,46 @@
+import logging
 import os
-import uuid
-import json
-import asyncio
-import threading
-from typing import Any, Dict, List, Optional, Tuple
-from datetime import datetime
+
+from inspect import signature
+from typing import Any, List, Optional, Tuple, Type
 
 from langchain.agents.agent import RunnableAgent
+from langchain.agents.tools import BaseTool
 from langchain.agents.tools import tool as LangChainTool
-from langchain.tools.render import render_text_description
+from langchain.agents.output_parsers import ReActSingleInputOutputParser
 from langchain_core.agents import AgentAction
 from langchain_core.callbacks import BaseCallbackHandler
 from langchain_openai import ChatOpenAI
-from pydantic import (
-    UUID4,
-    BaseModel,
-    ConfigDict,
-    Field,
-    InstanceOf,
-    PrivateAttr,
-    field_validator,
-    model_validator,
-)
-from pydantic_core import PydanticCustomError
+from pydantic import Field, InstanceOf, PrivateAttr, model_validator
 
-from queue import Queue
-from crewai.agents import CacheHandler, CrewAgentExecutor, CrewAgentParser, ToolsHandler
+from crewai.agents import CacheHandler, CrewAgentExecutor, CrewAgentParser
+from crewai.agents.custom_parsers import GeminiAgentParser
+from crewai.agents.socket_stream_handler import SocketStreamHandler
+from crewai.agents.agent_builder.base_agent import BaseAgent
 from crewai.memory.contextual.contextual_memory import ContextualMemory
-from crewai.utilities import I18N, Logger, Prompts, RPMController
-from crewai.utilities.token_counter_callback import TokenCalcHandler, TokenProcess
-from agentops.agent import track_agent
+from crewai.tools.agent_tools import AgentTools
+from crewai.utilities import Converter, Prompts
+from crewai.utilities.constants import TRAINED_AGENTS_DATA_FILE, TRAINING_DATA_FILE
+from crewai.utilities.token_counter_callback import TokenCalcHandler
+from crewai.utilities.training_handler import CrewTrainingHandler
 
-import logging
+agentops = None
+try:
+    import agentops  # type: ignore # Name "agentops" already defined on line 21
+    from agentops import track_agent
+except ImportError:
+
+    def track_agent():
+        def noop(f):
+            return f
+
+        return noop
+
 logging.basicConfig(level=(os.getenv("LOGGING_LEVEL", "debug").lower() or logging.DEBUG))
 
+
 @track_agent()
-class Agent(BaseModel):
+class Agent(BaseAgent):
     """Represents an agent in a system.
 
     Each agent has a role, a goal, a backstory, and an optional language model (llm).
@@ -48,7 +53,7 @@ class Agent(BaseModel):
             backstory: The backstory of the agent.
             config: Dict representation of agent configuration.
             llm: The language model that will run the agent.
-            function_calling_llm: The language model that will the tool calling for this agent, it overrides the crew function_calling_llm.
+            function_calling_llm: The language model that will handle the tool calling for this agent, it overrides the crew function_calling_llm.
             max_iter: Maximum number of iterations for an agent to execute a task.
             memory: Whether the agent should have memory or not.
             max_rpm: Maximum number of requests per minute for the agent execution to be respected.
@@ -56,79 +61,29 @@ class Agent(BaseModel):
             allow_delegation: Whether the agent is allowed to delegate tasks to other agents.
             tools: Tools at agents disposal
             step_callback: Callback to be executed after each step of the agent execution.
-            stop_generating_check: Callback to be executed every nth chunk to check if generation should be stopped
+            stop_generating_check: Function that returns whether generation should be stopped
             callbacks: A list of callback functions from the langchain library that are triggered during the agent's execution process
+            allow_code_execution: Enable code execution for the agent.
+            max_retry_limit: Maximum number of retries for an agent to execute a task when an error occurs.
     """
-
-    __hash__ = object.__hash__  # type: ignore
-    _logger: Logger = PrivateAttr()
-    _rpm_controller: RPMController = PrivateAttr(default=None)
-    _request_within_rpm_limit: Any = PrivateAttr(default=None)
-    _token_process: TokenProcess = TokenProcess()
-    agent_ops_agent_name: str = None
-    agent_ops_agent_id: str = None
-
-    formatting_errors: int = 0
-    model_config = ConfigDict(arbitrary_types_allowed=True)
-    id: UUID4 = Field(
-        default_factory=uuid.uuid4,
-        frozen=True,
-        description="Unique identifier for the object, not set by user.",
-    )
     name: str = Field(description="Name of the agent")
-    role: str = Field(description="Role of the agent")
-    goal: str = Field(description="Objective of the agent")
-    backstory: str = Field(description="Backstory of the agent")
-    cache: bool = Field(
-        default=True,
-        description="Whether the agent should use a cache for tool usage.",
-    )
-    config: Optional[Dict[str, Any]] = Field(
-        description="Configuration for the agent",
-        default=None,
-    )
-    max_rpm: Optional[int] = Field(
-        default=None,
-        description="Maximum number of requests per minute for the agent execution to be respected.",
-    )
-    verbose: bool = Field(
-        default=False, description="Verbose mode for the Agent Execution"
-    )
-    allow_delegation: bool = Field(
-        default=True, description="Allow delegation of tasks to agents"
-    )
-    tools: Optional[List[Any]] = Field(
-        default_factory=list, description="Tools at agents disposal"
-    )
-    max_iter: Optional[int] = Field(
-        default=25, description="Maximum iterations for an agent to execute a task"
-    )
+    _times_executed: int = PrivateAttr(default=0)
     max_execution_time: Optional[int] = Field(
         default=None,
         description="Maximum execution time for an agent to execute a task",
     )
-    agent_executor: InstanceOf[CrewAgentExecutor] = Field(
-        default=None, description="An instance of the CrewAgentExecutor class."
-    )
-    crew: Any = Field(default=None, description="Crew to which the agent belongs.")
-    tools_handler: InstanceOf[ToolsHandler] = Field(
-        default=None, description="An instance of the ToolsHandler class."
-    )
+    agent_ops_agent_name: str = None  # type: ignore # Incompatible types in assignment (expression has type "None", variable has type "str")
+    agent_ops_agent_id: str = None  # type: ignore # Incompatible types in assignment (expression has type "None", variable has type "str")
     cache_handler: InstanceOf[CacheHandler] = Field(
         default=None, description="An instance of the CacheHandler class."
     )
-    step_callback: Optional[Any] = Field(
-        default=None,
-        description="Callback to be executed after each step of the agent execution.",
-    )
     stop_generating_check: Optional[Any] = Field(
         default=None,
-        description="Callback to be executed every nth chunk to check if generation should be stopped",
+        description="Function that returns whether generation should be stopped",
     )
-    i18n: I18N = Field(default=I18N(), description="Internationalization settings.")
     llm: Any = Field(
         default_factory=lambda: ChatOpenAI(
-            model=os.environ.get("OPENAI_MODEL_NAME", "gpt-4")
+            model=os.environ.get("OPENAI_MODEL_NAME", "gpt-4o")
         ),
         description="Language model that will run the agent.",
     )
@@ -138,45 +93,34 @@ class Agent(BaseModel):
     callbacks: Optional[List[InstanceOf[BaseCallbackHandler]]] = Field(
         default=None, description="Callback to be executed"
     )
-
-    _original_role: str | None = None
-    _original_goal: str | None = None
-    _original_backstory: str | None = None
+    system_template: Optional[str] = Field(
+        default=None, description="System format for the agent."
+    )
+    prompt_template: Optional[str] = Field(
+        default=None, description="Prompt format for the agent."
+    )
+    response_template: Optional[str] = Field(
+        default=None, description="Response format for the agent."
+    )
+    tools_results: Optional[List[Any]] = Field(
+        default=[], description="Results of the tools used by the agent."
+    )
+    allow_code_execution: Optional[bool] = Field(
+        default=False, description="Enable code execution for the agent."
+    )
+    max_retry_limit: int = Field(
+        default=2,
+        description="Maximum number of retries for an agent to execute a task when an error occurs.",
+    )
 
     def __init__(__pydantic_self__, **data):
         config = data.pop("config", {})
         super().__init__(**config, **data)
         __pydantic_self__.agent_ops_agent_name = __pydantic_self__.role
 
-    @field_validator("id", mode="before")
-    @classmethod
-    def _deny_user_set_id(cls, v: Optional[UUID4]) -> None:
-        if v:
-            raise PydanticCustomError(
-                "may_not_set_field", "This field is not to be set by the user.", {}
-            )
-
-    @model_validator(mode="after")
-    def set_attributes_based_on_config(self) -> "Agent":
-        """Set attributes based on the agent configuration."""
-        if self.config:
-            for key, value in self.config.items():
-                setattr(self, key, value)
-        return self
-
-    @model_validator(mode="after")
-    def set_private_attrs(self):
-        """Set private attributes."""
-        self._logger = Logger(self.verbose)
-        if self.max_rpm and not self._rpm_controller:
-            self._rpm_controller = RPMController(
-                max_rpm=self.max_rpm, logger=self._logger
-            )
-        return self
-
     @model_validator(mode="after")
     def set_agent_executor(self) -> "Agent":
-        """set agent executor is set."""
+        """Ensure agent executor and token process are set."""
         if hasattr(self.llm, "model_name"):
             token_handler = TokenCalcHandler(self.llm.model_name, self._token_process)
 
@@ -185,8 +129,17 @@ class Agent(BaseModel):
                 self.llm.callbacks = []
 
             # Check if an instance of TokenCalcHandler already exists in the list
-            if not any(isinstance(handler, TokenCalcHandler) for handler in self.llm.callbacks):
+            if not any(
+                    isinstance(handler, TokenCalcHandler) for handler in self.llm.callbacks
+            ):
                 self.llm.callbacks.append(token_handler)
+
+            if agentops and not any(
+                    isinstance(handler, agentops.LangchainCallbackHandler)
+                    for handler in self.llm.callbacks
+            ):
+                agentops.stop_instrumenting()
+                self.llm.callbacks.append(agentops.LangchainCallbackHandler())
 
         if not self.agent_executor:
             if not self.cache_handler:
@@ -195,10 +148,10 @@ class Agent(BaseModel):
         return self
 
     def execute_task(
-        self,
-        task: Any,
-        context: Optional[str] = None,
-        tools: Optional[List[Any]] = None,
+            self,
+            task: Any,
+            context: Optional[str] = None,
+            tools: Optional[List[Any]] = None,
     ) -> str:
         """Execute a task with the agent.
 
@@ -211,7 +164,7 @@ class Agent(BaseModel):
             Output of the agent
         """
         if self.tools_handler:
-            self.tools_handler.last_used_tool = {}
+            self.tools_handler.last_used_tool = {}  # type: ignore # Incompatible types in assignment (expression has type "dict[Never, Never]", variable has type "ToolCalling")
 
         task_prompt = task.prompt()
 
@@ -230,150 +183,66 @@ class Agent(BaseModel):
             if memory.strip() != "":
                 task_prompt += self.i18n.slice("memory").format(memory=memory)
 
-        tools = tools or self.tools
+        tools = tools or self.tools or []
         parsed_tools = self._parse_tools(tools)
-
         self.create_agent_executor(tools=tools)
         self.agent_executor.tools = parsed_tools
         self.agent_executor.task = task
 
-        self.agent_executor.tools_description = render_text_description(parsed_tools)
+        self.agent_executor.tools_description = self._render_text_description_and_args(
+            parsed_tools
+        )
         self.agent_executor.tools_names = self.__tools_names(parsed_tools)
 
-        if self.step_callback:
-            result_queue = Queue()
-            _thread = threading.Thread(target=self.wrap_async_func, args=(task_prompt, result_queue))
-            _thread.start()
-            _thread.join()
-            result = result_queue.get()
+        socket_stream_handler = SocketStreamHandler(
+            socket_write_fn=self.step_callback,
+            agent_name=self.name, task_name=task.name,
+            tools_names=self.agent_executor.tools_names)
+
+        if self.crew and self.crew._train:
+            task_prompt = self._training_handler(task_prompt=task_prompt)
         else:
+            task_prompt = self._use_trained_data(task_prompt=task_prompt)
+
+        try:
             result = self.agent_executor.invoke(
                 {
                     "input": task_prompt,
                     "tool_names": self.agent_executor.tools_names,
                     "tools": self.agent_executor.tools_description,
-                }
+                },
+                config={'callbacks': [socket_stream_handler]}
             )["output"]
+        except Exception as e:
+            self._times_executed += 1
+            if self._times_executed > self.max_retry_limit:
+                raise e
+            result = self.execute_task(task, context, tools)
 
         if self.max_rpm:
             self._rpm_controller.stop_rpm_counter()
 
+        # If there was any tool in self.tools_results that had result_as_answer
+        # set to True, return the results of the last tool that had
+        # result_as_answer set to True
+        for tool_result in self.tools_results:  # type: ignore # Item "None" of "list[Any] | None" has no attribute "__iter__" (not iterable)
+            if tool_result.get("result_as_answer", False):
+                result = tool_result["result"]
+
         return result
 
-    def wrap_async_func(self, args, queue):
-        asyncio.run(self.stream_execute(args, queue))
-
-    async def stream_execute(self, task_prompt, result_queue):
-        result = ""
-        acc = ""
-        chunkId = str(uuid.uuid4())
-        tool_chunkId = str(uuid.uuid4())
-        first = True
-        agent_name = ""
-        step = 1
-        try:
-            async for event in self.agent_executor.astream_events(
-                {
-                    "input": task_prompt,
-                    "tool_names": self.agent_executor.tools_names,
-                    "tools": self.agent_executor.tools_description,
-                },
-                version="v1",
-            ):
-                    if self.stop_generating_check(step):
-                        self.step_callback(f"🛑 Stopped generating.", "message", True, str(uuid.uuid4()), datetime.now().timestamp() * 1000, "inline")
-                        return
-                    step = step + 1
-
-                    kind = event["event"]
-                    logging.debug(f"{kind}:\n{event}", flush=True)
-                    match kind:
-
-                        # message chunk
-                        case "on_chat_model_stream":
-                            content = event['data']['chunk'].content
-                            chunk = repr(content)
-                            self.step_callback(content, "message", first, chunkId, datetime.now().timestamp() * 1000, "bubble", agent_name)
-                            first = False
-                            logging.debug(f"Text chunkId ({chunkId}): {chunk}", flush=True)
-                            acc += content
-                            result += chunk
-
-                        # praser chunk
-                        case "on_parser_stream":
-                            logging.debug(f"Parser chunk ({kind}): {event['data']['chunk']}", flush=True)
-
-                        # all done
-                        case "on_llm_end":
-                            logging.debug(f"{kind}:\n{event}", flush=True)
-                            self.step_callback("", "terminate")
-
-                        # agent started, get their name
-                        case "on_chain_start":
-                            if not agent_name or len(agent_name) == 0:
-                                agent_name = self.name
-                                # agent_name = event["name"]
-
-                        # tool chat message finished
-                        case "on_chain_end":
-                            self.step_callback(acc, "message_complete", True, chunkId, datetime.now().timestamp() * 1000, "bubble", agent_name)
-                            chunkId = str(uuid.uuid4())
-                            first = True
-
-                        # tool started being used
-                        case "on_tool_start":
-                            logging.debug(f"{kind}:\n{event}", flush=True)
-                            tool_chunkId = str(uuid.uuid4()) #TODO:
-                            tool_name = event.get('name').replace('_', ' ').capitalize()
-                            self.step_callback(f"Using tool: {tool_name}", "message", True, tool_chunkId, datetime.now().timestamp() * 1000, "inline")
-
-                        # tool finished being used
-                        case "on_tool_end":
-                            logging.debug(f"{kind}:\n{event}", flush=True)
-                            tool_name = event.get('name').replace('_', ' ').capitalize()
-                            self.step_callback(f"Finished using tool: {tool_name}", "message_complete", True, tool_chunkId, datetime.now().timestamp() * 1000, "inline")
-                            tool_chunkId = str(uuid.uuid4())
-
-                        # see https://python.langchain.com/docs/expression_language/streaming#event-reference
-                        case _:
-                            logging.debug(f"unhandled {kind} event", flush=True)
-        except Exception as chunk_error:
-            import sys, traceback
-            exc_type, exc_value, exc_traceback = sys.exc_info()
-            err_lines = traceback.format_exception(exc_type, exc_value, exc_traceback)
-            logging.error(err_lines)
-            tool_chunkId = str(uuid.uuid4())
-            self.step_callback(f"⛔ An unexpected error occurred", "message", True, str(uuid.uuid4()), datetime.now().timestamp() * 1000, "inline")
-            #TODO: if debug:
-            self.step_callback(f"""Stack trace:
-```
-{chunk_error}
-```
-""", "message", True, str(uuid.uuid4()), datetime.now().timestamp() * 1000, "bubble")
-            pass
-        result_queue.put(acc)
-
-    def set_cache_handler(self, cache_handler: CacheHandler) -> None:
-        """Set the cache handler for the agent.
-
-        Args:
-            cache_handler: An instance of the CacheHandler class.
-        """
-        self.tools_handler = ToolsHandler()
-        if self.cache:
-            self.cache_handler = cache_handler
-            self.tools_handler.cache = cache_handler
-        self.create_agent_executor()
-
-    def set_rpm_controller(self, rpm_controller: RPMController) -> None:
-        """Set the rpm controller for the agent.
-
-        Args:
-            rpm_controller: An instance of the RPMController class.
-        """
-        if not self._rpm_controller:
-            self._rpm_controller = rpm_controller
-            self.create_agent_executor()
+    def format_log_to_str(
+            self,
+            intermediate_steps: List[Tuple[AgentAction, str]],
+            observation_prefix: str = "Observation: ",
+            llm_prefix: str = "",
+    ) -> str:
+        """Construct the scratchpad that lets the agent continue its thought process."""
+        thoughts = ""
+        for action, observation in intermediate_steps:
+            thoughts += action.log
+            thoughts += f"\n{observation_prefix}{observation}\n{llm_prefix}"
+        return thoughts
 
     def create_agent_executor(self, tools=None) -> None:
         """Create an agent executor for the agent.
@@ -381,7 +250,7 @@ class Agent(BaseModel):
         Returns:
             An instance of the CrewAgentExecutor class.
         """
-        tools = tools or self.tools
+        tools = tools or self.tools or []
 
         agent_args = {
             "input": lambda x: x["input"],
@@ -405,16 +274,23 @@ class Agent(BaseModel):
             "max_execution_time": self.max_execution_time,
             "step_callback": self.step_callback,
             "tools_handler": self.tools_handler,
+            "stop_generating_check": self.stop_generating_check,
             "function_calling_llm": self.function_calling_llm or self.llm,
             "callbacks": self.callbacks,
         }
 
         if self._rpm_controller:
-            executor_args[
-                "request_within_rpm_limit"
-            ] = self._rpm_controller.check_or_wait
+            executor_args["request_within_rpm_limit"] = (
+                self._rpm_controller.check_or_wait
+            )
 
-        prompt = Prompts(i18n=self.i18n, tools=tools).task_execution()
+        prompt = Prompts(
+            i18n=self.i18n,
+            tools=tools,
+            system_template=self.system_template,
+            prompt_template=self.prompt_template,
+            response_template=self.response_template,
+        ).task_execution()
 
         execution_prompt = prompt.partial(
             goal=self.goal,
@@ -422,48 +298,53 @@ class Agent(BaseModel):
             backstory=self.backstory,
         )
 
-        bind = self.llm.bind(stop=[self.i18n.slice("observation")])
-        inner_agent = agent_args | execution_prompt | bind | CrewAgentParser(agent=self)
+        stop_words = [self.i18n.slice("observation")]
+
+        if self.response_template:
+            stop_words.append(
+                self.response_template.split("{{ .Response }}")[1].strip()
+            )
+
+        bind = self.llm.bind(stop=stop_words)
+
+        parser_class = self.get_parser_class_for_llm()
+        inner_agent = agent_args | execution_prompt | bind | parser_class(agent=self)
+
         self.agent_executor = CrewAgentExecutor(
             agent=RunnableAgent(runnable=inner_agent), **executor_args
         )
 
-    def interpolate_inputs(self, inputs: Dict[str, Any]) -> None:
-        """Interpolate inputs into the agent description and backstory."""
-        if self._original_role is None:
-            self._original_role = self.role
-        if self._original_goal is None:
-            self._original_goal = self.goal
-        if self._original_backstory is None:
-            self._original_backstory = self.backstory
+    def get_parser_class_for_llm(self) -> Type[ReActSingleInputOutputParser]:
+        return GeminiAgentParser if self._llm_is_gemini() else CrewAgentParser
 
-        if inputs:
-            self.role = self._original_role.format(**inputs)
-            self.goal = self._original_goal.format(**inputs)
-            self.backstory = self._original_backstory.format(**inputs)
+    def _llm_is_gemini(self) -> bool:
+        # not using isinstance() to avoid import and dependency on langchain-google-vertexai
+        return "model_name='gemini" in str(self.llm)
 
-    def increment_formatting_errors(self) -> None:
-        """Count the formatting errors of the agent."""
-        self.formatting_errors += 1
+    def get_delegation_tools(self, agents: List[BaseAgent]):
+        agent_tools = AgentTools(agents=agents)
+        tools = agent_tools.tools()
+        return tools
 
-    def format_log_to_str(
-        self,
-        intermediate_steps: List[Tuple[AgentAction, str]],
-        observation_prefix: str = "Observation: ",
-        llm_prefix: str = "",
-    ) -> str:
-        """Construct the scratchpad that lets the agent continue its thought process."""
-        thoughts = ""
-        for action, observation in intermediate_steps:
-            thoughts += action.log
-            thoughts += f"\n{observation_prefix}{observation}\n{llm_prefix}"
-        return thoughts
+    def get_code_execution_tools(self):
+        try:
+            from crewai_tools import CodeInterpreterTool
 
-    def _parse_tools(self, tools: List[Any]) -> List[LangChainTool]:
+            return [CodeInterpreterTool()]
+        except ModuleNotFoundError:
+            self._logger.log(
+                "info", "Coding tools not available. Install crewai_tools. "
+            )
+
+    def get_output_converter(self, llm, text, model, instructions):
+        return Converter(llm=llm, text=text, model=model, instructions=instructions)
+
+    def _parse_tools(self, tools: List[Any]) -> List[
+        LangChainTool]:  # type: ignore # Function "langchain_core.tools.tool" is not valid as a type
         """Parse tools to be used for the task."""
-        # tentatively try to import from crewai_tools import BaseTool as CrewAITool
         tools_list = []
         try:
+            # tentatively try to import from crewai_tools import BaseTool as CrewAITool
             from crewai_tools import BaseTool as CrewAITool
 
             for tool in tools:
@@ -472,9 +353,81 @@ class Agent(BaseModel):
                 else:
                     tools_list.append(tool)
         except ModuleNotFoundError:
+            tools_list = []
             for tool in tools:
                 tools_list.append(tool)
+
         return tools_list
+
+    def _training_handler(self, task_prompt: str) -> str:
+        """Handle training data for the agent task prompt to improve output on Training."""
+        if data := CrewTrainingHandler(TRAINING_DATA_FILE).load():
+            agent_id = str(self.id)
+
+            if data.get(agent_id):
+                human_feedbacks = [
+                    i["human_feedback"] for i in data.get(agent_id, {}).values()
+                ]
+                task_prompt += "You MUST follow these feedbacks: \n " + "\n - ".join(
+                    human_feedbacks
+                )
+
+        return task_prompt
+
+    def _use_trained_data(self, task_prompt: str) -> str:
+        """Use trained data for the agent task prompt to improve output."""
+        if data := CrewTrainingHandler(TRAINED_AGENTS_DATA_FILE).load():
+            if trained_data_output := data.get(self.role):
+                task_prompt += "You MUST follow these feedbacks: \n " + "\n - ".join(
+                    trained_data_output["suggestions"]
+                )
+        return task_prompt
+
+    def _render_text_description(self, tools: List[BaseTool]) -> str:
+        """Render the tool name and description in plain text.
+
+        Output will be in the format of:
+
+        .. code-block:: markdown
+
+            search: This tool is used for search
+            calculator: This tool is used for math
+        """
+        description = "\n".join(
+            [
+                f"Tool name: {tool.name}\nTool description:\n{tool.description}"
+                for tool in tools
+            ]
+        )
+
+        return description
+
+    def _render_text_description_and_args(self, tools: List[BaseTool]) -> str:
+        """Render the tool name, description, and args in plain text.
+
+        Output will be in the format of:
+
+        .. code-block:: markdown
+
+            search: This tool is used for search, args: {"query": {"type": "string"}}
+            calculator: This tool is used for math, \
+    args: {"expression": {"type": "string"}}
+        """
+        tool_strings = []
+        for tool in tools:
+            args_schema = str(tool.args)
+            if hasattr(tool, "func") and tool.func:
+                sig = signature(tool.func)
+                description = (
+                    f"Tool Name: {tool.name}{sig}\nTool Description: {tool.description}"
+                )
+            else:
+                description = (
+                    f"Tool Name: {tool.name}\nTool Description: {tool.description}"
+                )
+            tool_strings.append(f"{description}\nTool Arguments: {args_schema}")
+
+        return "\n".join(tool_strings)
 
     @staticmethod
     def __tools_names(tools) -> str:
