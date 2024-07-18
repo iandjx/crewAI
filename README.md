@@ -70,6 +70,17 @@ os.environ["SERPER_API_KEY"] = "Your Key" # serper.dev API key
 # os.environ["OPENAI_MODEL_NAME"] ='openhermes'  # Adjust based on available model
 # os.environ["OPENAI_API_KEY"] ='sk-111111111111111111111111111111111111111111111111'
 
+# You can pass an optional llm attribute specifying what model you wanna use.
+# It can be a local model through Ollama / LM Studio or a remote
+# model like OpenAI, Mistral, Antrophic or others (https://docs.crewai.com/how-to/LLM-Connections/)
+#
+# import os
+# os.environ['OPENAI_MODEL_NAME'] = 'gpt-3.5-turbo'
+#
+# OR
+#
+# from langchain_openai import ChatOpenAI
+
 search_tool = SerperDevTool()
 
 # Define your agents with roles and goals
@@ -81,18 +92,9 @@ researcher = Agent(
   You have a knack for dissecting complex data and presenting actionable insights.""",
   verbose=True,
   allow_delegation=False,
-  tools=[search_tool]
   # You can pass an optional llm attribute specifying what model you wanna use.
-  # It can be a local model through Ollama / LM Studio or a remote
-  # model like OpenAI, Mistral, Antrophic or others (https://docs.crewai.com/how-to/LLM-Connections/)
-  #
-  # import os
-  # os.environ['OPENAI_MODEL_NAME'] = 'gpt-3.5-turbo'
-  #
-  # OR
-  #
-  # from langchain_openai import ChatOpenAI
-  # llm=ChatOpenAI(model_name="gpt-3.5", temperature=0.7)
+  # llm=ChatOpenAI(model_name="gpt-3.5", temperature=0.7),
+  tools=[search_tool]
 )
 writer = Agent(
   role='Tech Content Strategist',
@@ -125,6 +127,7 @@ crew = Crew(
   agents=[researcher, writer],
   tasks=[task1, task2],
   verbose=2, # You can set it to 1 or 2 to different logging levels
+  process = Process.sequential
 )
 
 # Get your crew to work!
@@ -193,6 +196,7 @@ Please refer to the [Connect crewAI to LLMs](https://docs.crewai.com/how-to/LLM-
 
 **CrewAI's Advantage**: CrewAI is built with production in mind. It offers the flexibility of Autogen's conversational agents and the structured process approach of ChatDev, but without the rigidity. CrewAI's processes are designed to be dynamic and adaptable, fitting seamlessly into both development and production workflows.
 
+
 ## Contribution
 
 CrewAI is open-source and we welcome contributions. If you're looking to contribute, please:
@@ -231,7 +235,7 @@ poetry run pytest
 ### Running static type checks
 
 ```bash
-poetry run pyright
+poetry run mypy
 ```
 
 ### Packaging

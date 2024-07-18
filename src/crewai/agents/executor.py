@@ -1,7 +1,6 @@
 import threading
 import time
 from typing import Any, Dict, Iterator, List, Optional, Tuple, Union
-from difflib import get_close_matches
 
 from langchain.agents import AgentExecutor
 from langchain.agents.agent import ExceptionTool
@@ -13,21 +12,15 @@ from langchain_core.tools import BaseTool
 from langchain_core.utils.input import get_color_mapping
 from pydantic import InstanceOf
 
+from crewai.agents.agent_builder.base_agent_executor_mixin import CrewAgentExecutorMixin
 from crewai.agents.tools_handler import ToolsHandler
-from crewai.memory.entity.entity_memory_item import EntityMemoryItem
-from crewai.memory.long_term.long_term_memory_item import LongTermMemoryItem
-from crewai.memory.short_term.short_term_memory_item import ShortTermMemoryItem
 from crewai.tools.tool_usage import ToolUsage, ToolUsageErrorException
 from crewai.utilities import I18N
-from crewai.utilities.converter import ConverterError
-from crewai.utilities.evaluators.task_evaluator import TaskEvaluator
-from langchain_core.callbacks import (
-    AsyncCallbackManagerForChainRun,
-)
-from langchain.agents.tools import InvalidTool
+from crewai.utilities.constants import TRAINING_DATA_FILE
+from crewai.utilities.training_handler import CrewTrainingHandler
 
 
-class CrewAgentExecutor(AgentExecutor):
+class CrewAgentExecutor(AgentExecutor, CrewAgentExecutorMixin):
     _i18n: I18N = I18N()
     name: str = ""
     should_ask_for_human_input: bool = False
@@ -41,138 +34,15 @@ class CrewAgentExecutor(AgentExecutor):
     crew: Any = None
     function_calling_llm: Any = None
     request_within_rpm_limit: Any = None
-    tools_handler: InstanceOf[ToolsHandler] = None
+    tools_handler: Optional[InstanceOf[ToolsHandler]] = None
     max_iterations: Optional[int] = 15
     have_forced_answer: bool = False
-    force_answer_max_iterations: Optional[int] = None
+    force_answer_max_iterations: Optional[int] = None  # type: ignore # Incompatible types in assignment (expression has type "int | None", base class "CrewAgentExecutorMixin" defined the type as "int")
     step_callback: Optional[Any] = None
     stop_generating_check: Optional[Any] = None
     system_template: Optional[str] = None
     prompt_template: Optional[str] = None
     response_template: Optional[str] = None
-
-    @root_validator()
-    def set_force_answer_max_iterations(cls, values: Dict) -> Dict:
-        values["force_answer_max_iterations"] = values["max_iterations"] - 2
-        return values
-
-    def _should_force_answer(self) -> bool:
-        return (
-            self.iterations == self.force_answer_max_iterations
-        ) and not self.have_forced_answer
-
-    def _create_short_term_memory(self, output) -> None:
-        if (
-            self.crew
-            and self.crew.memory
-            and "Action: Delegate work to co-worker" not in output.log
-        ):
-            memory = ShortTermMemoryItem(
-                data=output.log,
-                agent=self.crew_agent.role,
-                metadata={
-                    "observation": self.task.description,
-                },
-            )
-            self.crew._short_term_memory.save(memory)
-
-    def _create_long_term_memory(self, output) -> None:
-        if self.crew and self.crew.memory:
-            ltm_agent = TaskEvaluator(self.crew_agent)
-            evaluation = ltm_agent.evaluate(self.task, output.log)
-
-            if isinstance(evaluation, ConverterError):
-                return
-
-            long_term_memory = LongTermMemoryItem(
-                task=self.task.description,
-                agent=self.crew_agent.role,
-                quality=evaluation.quality,
-                datetime=str(time.time()),
-                expected_output=self.task.expected_output,
-                metadata={
-                    "suggestions": evaluation.suggestions,
-                    "quality": evaluation.quality,
-                },
-            )
-            self.crew._long_term_memory.save(long_term_memory)
-
-            for entity in evaluation.entities:
-                entity_memory = EntityMemoryItem(
-                    name=entity.name,
-                    type=entity.type,
-                    description=entity.description,
-                    relationships="\n".join([f"- {r}" for r in entity.relationships]),
-                )
-                self.crew._entity_memory.save(entity_memory)
-
-
-    async def _aperform_agent_action(
-        self,
-        name_to_tool_map: Dict[str, BaseTool],
-        color_mapping: Dict[str, str],
-        agent_action: AgentAction,
-        run_manager: Optional[AsyncCallbackManagerForChainRun] = None,
-    ) -> AgentStep:
-        if run_manager:
-            await run_manager.on_agent_action(
-                agent_action, verbose=self.verbose, color="green"
-            )
-        # Otherwise we lookup the tool
-        if agent_action.tool in name_to_tool_map:
-            tool = name_to_tool_map[agent_action.tool]
-            return_direct = tool.return_direct
-            color = color_mapping[agent_action.tool]
-            tool_run_kwargs = self.agent.tool_run_logging_kwargs()
-            if return_direct:
-                tool_run_kwargs["llm_prefix"] = ""
-            # We then call the tool on the tool input to get an observation
-            observation = await tool.arun(
-                agent_action.tool_input,
-                verbose=self.verbose,
-                color=color,
-                callbacks=run_manager.get_child() if run_manager else None,
-                **tool_run_kwargs,
-            )
-        else:
-            # Attempt to find a close match
-            tool_names: List[str] = list(name_to_tool_map.keys())
-            similar_tools = get_close_matches(agent_action.tool, tool_names, n=1, cutoff=0.6)
-            print(f"""
-Tool "{agent_action.tool}" exact match not found, attempting to find the right tool...
-tool_names: {tool_names}
-similar_tools: {similar_tools}
-""")
-            if similar_tools:
-                closest_tool = similar_tools[0]
-                tool = name_to_tool_map[closest_tool]
-                return_direct = tool.return_direct
-                color = color_mapping[closest_tool]
-                tool_run_kwargs = self.agent.tool_run_logging_kwargs()
-                if return_direct:
-                    tool_run_kwargs['llm_prefix'] = ''
-                # Call the closest matching tool to get an observation
-                observation = await tool.arun(
-                    agent_action.tool_input,
-                    verbose=self.verbose,
-                    color=color,
-                    callbacks=run_manager.get_child() if run_manager else None,
-                    **tool_run_kwargs,
-                )
-            else:
-                tool_run_kwargs = self.agent.tool_run_logging_kwargs()
-                observation = await InvalidTool().arun(
-                    {
-                        "requested_tool_name": agent_action.tool,
-                        "available_tool_names": list(name_to_tool_map.keys()),
-                    },
-                    verbose=self.verbose,
-                    color=None,
-                    callbacks=run_manager.get_child() if run_manager else None,
-                    **tool_run_kwargs,
-                )
-        return AgentStep(action=agent_action, observation=observation)
-
 
     def _call(
         self,
@@ -266,7 +136,7 @@ similar_tools: {similar_tools}
             intermediate_steps = self._prepare_intermediate_steps(intermediate_steps)
 
             # Call the LLM to see what to do.
-            output = self.agent.plan(
+            output = self.agent.plan(  # type: ignore #  Incompatible types in assignment (expression has type "AgentAction | AgentFinish | list[AgentAction]", variable has type "AgentAction")
                 intermediate_steps,
                 callbacks=run_manager.get_child() if run_manager else None,
                 **inputs,
@@ -323,12 +193,17 @@ similar_tools: {similar_tools}
         # If the tool chosen is the finishing tool, then we end and return.
         if isinstance(output, AgentFinish):
             if self.should_ask_for_human_input:
+                human_feedback = self._ask_human_input(output.return_values["output"])
+
+                if self.crew and self.crew._train:
+                    self._handle_crew_training_output(output, human_feedback)
+
                 # Making sure we only ask for it once, so disabling for the next thought loop
                 self.should_ask_for_human_input = False
-                human_feedback = self._ask_human_input(output.return_values["output"])
                 action = AgentAction(
                     tool="Human Input", tool_input=human_feedback, log=output.log
                 )
+
                 yield AgentStep(
                     action=action,
                     observation=self._i18n.slice("human_feedback").format(
@@ -338,6 +213,9 @@ similar_tools: {similar_tools}
                 return
 
             else:
+                if self.crew and self.crew._train:
+                    self._handle_crew_training_output(output)
+
                 yield output
                 return
 
@@ -352,13 +230,14 @@ similar_tools: {similar_tools}
                 run_manager.on_agent_action(agent_action, color="green")
 
             tool_usage = ToolUsage(
-                tools_handler=self.tools_handler,
-                tools=self.tools,
+                tools_handler=self.tools_handler,  # type: ignore # Argument "tools_handler" to "ToolUsage" has incompatible type "ToolsHandler | None"; expected "ToolsHandler"
+                tools=self.tools,  # type: ignore # Argument "tools" to "ToolUsage" has incompatible type "Sequence[BaseTool]"; expected "list[BaseTool]"
                 original_tools=self.original_tools,
                 tools_description=self.tools_description,
                 tools_names=self.tools_names,
                 function_calling_llm=self.function_calling_llm,
                 task=self.task,
+                agent=self.crew_agent,
                 action=agent_action,
             )
             tool_calling = tool_usage.parse(agent_action.log)
@@ -367,6 +246,8 @@ similar_tools: {similar_tools}
                 observation = tool_calling.message
             else:
                 if tool_calling.tool_name.casefold().strip() in [
+                    name.casefold().strip() for name in name_to_tool_map
+                ] or tool_calling.tool_name.casefold().replace("_", " ") in [
                     name.casefold().strip() for name in name_to_tool_map
                 ]:
                     observation = tool_usage.use(tool_calling, agent_action.log)
@@ -377,8 +258,30 @@ similar_tools: {similar_tools}
                     )
             yield AgentStep(action=agent_action, observation=observation)
 
-    def _ask_human_input(self, final_answer: dict) -> str:
-        """Get human input."""
-        return input(
-            self._i18n.slice("getting_input").format(final_answer=final_answer)
-        )
+    def _handle_crew_training_output(
+        self, output: AgentFinish, human_feedback: str | None = None
+    ) -> None:
+        """Function to handle the process of the training data."""
+        agent_id = str(self.crew_agent.id)
+
+        if (
+            CrewTrainingHandler(TRAINING_DATA_FILE).load()
+            and not self.should_ask_for_human_input
+        ):
+            training_data = CrewTrainingHandler(TRAINING_DATA_FILE).load()
+            if training_data.get(agent_id):
+                training_data[agent_id][self.crew._train_iteration][
+                    "improved_output"
+                ] = output.return_values["output"]
+                CrewTrainingHandler(TRAINING_DATA_FILE).save(training_data)
+
+        if self.should_ask_for_human_input and human_feedback is not None:
+            training_data = {
+                "initial_output": output.return_values["output"],
+                "human_feedback": human_feedback,
+                "agent": agent_id,
+                "agent_role": self.crew_agent.role,
+            }
+            CrewTrainingHandler(TRAINING_DATA_FILE).append(
+                self.crew._train_iteration, agent_id, training_data
+            )
