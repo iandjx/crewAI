@@ -20,6 +20,7 @@ from crewai.agents.agent_builder.base_agent import BaseAgent
 from crewai.memory.contextual.contextual_memory import ContextualMemory
 from crewai.tools.agent_tools import AgentTools
 from crewai.utilities import Converter, Prompts
+from crewai.utilities.agent_error import AgentExecutionStoppedException
 from crewai.utilities.constants import TRAINED_AGENTS_DATA_FILE, TRAINING_DATA_FILE
 from crewai.utilities.token_counter_callback import TokenCalcHandler
 from crewai.utilities.training_handler import CrewTrainingHandler
@@ -213,6 +214,10 @@ class Agent(BaseAgent):
                 },
                 config={'callbacks': [socket_stream_handler]}
             )["output"]
+        except AgentExecutionStoppedException as ae:
+            # We raise this exception deeper down the stack as a way to effect chain termination.
+            # Catch it here and simply return to stop the chain.
+            return ae.message
         except Exception as e:
             self._times_executed += 1
             if self._times_executed > self.max_retry_limit:
