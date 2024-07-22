@@ -192,7 +192,7 @@ class Agent(BaseAgent):
         self.agent_executor.tools_description = self._render_text_description_and_args(
             parsed_tools
         )
-        self.agent_executor.tools_names = self.__tools_names(parsed_tools)
+        self.agent_executor.tools_names = self.__tools_names(parsed_tools) or "None"
 
         socket_stream_handler = SocketStreamHandler(
             socket_write_fn=self.step_callback,
