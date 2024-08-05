@@ -16,6 +16,7 @@ from crewai.agents.agent_builder.base_agent_executor_mixin import CrewAgentExecu
 from crewai.agents.tools_handler import ToolsHandler
 from crewai.tools.tool_usage import ToolUsage, ToolUsageErrorException
 from crewai.utilities import I18N
+from crewai.utilities.agent_error import AgentExecutionStoppedException
 from crewai.utilities.constants import TRAINING_DATA_FILE
 from crewai.utilities.training_handler import CrewTrainingHandler
 
@@ -70,6 +71,9 @@ class CrewAgentExecutor(AgentExecutor, CrewAgentExecutorMixin):
         # We now enter the agent loop (until it returns something).
         while self._should_continue(self.iterations, time_elapsed):
             if not self.request_within_rpm_limit or self.request_within_rpm_limit():
+                if self.stop_generating_check():
+                    raise AgentExecutionStoppedException()
+
                 next_step_output = self._take_next_step(
                     name_to_tool_map,
                     color_mapping,
@@ -92,9 +96,15 @@ class CrewAgentExecutor(AgentExecutor, CrewAgentExecutorMixin):
                         next_step_output, intermediate_steps, run_manager=run_manager
                     )
 
+                if self.stop_generating_check():
+                    raise AgentExecutionStoppedException()
+
                 intermediate_steps.extend(next_step_output)
 
                 if len(next_step_output) == 1:
+                    if self.stop_generating_check():
+                        raise AgentExecutionStoppedException()
+
                     next_step_action = next_step_output[0]
                     # See if tool should return directly
                     tool_return = self._get_tool_return(next_step_action)
@@ -125,7 +135,8 @@ class CrewAgentExecutor(AgentExecutor, CrewAgentExecutorMixin):
         """
         try:
             if self.stop_generating_check():
-                return
+                raise AgentExecutionStoppedException()
+
             if self._should_force_answer():
                 error = self._i18n.errors("force_final_answer")
                 output = AgentAction("_Exception", error, error)
