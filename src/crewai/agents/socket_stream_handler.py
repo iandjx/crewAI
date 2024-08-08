@@ -49,6 +49,7 @@ class SocketStreamHandler(BaseCallbackHandler):
             text="",
             event="terminate"
         )
+        self.first = True
 
     def on_llm_new_token(
             self,
@@ -70,3 +71,4 @@ class SocketStreamHandler(BaseCallbackHandler):
                 display_type="bubble",
                 author_name=self.agent_name
             )
+            self.first = False
