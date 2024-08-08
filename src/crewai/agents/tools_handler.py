@@ -2,6 +2,7 @@ import uuid
 from datetime import datetime
 from typing import Any, Optional, Union, Callable
 
+from ..agentcloud.socket_io import AgentCloudSocketIO
 from ..tools.cache_tools import CacheTools
 from ..tools.tool_calling import InstructorToolCalling, ToolCalling
 from .cache.cache_handler import CacheHandler
@@ -14,18 +15,18 @@ class ToolsHandler:
     cache: Optional[CacheHandler]
     send_to_socket: Callable
 
-    def __init__(self, socket_write_fn: Callable, cache: Optional[CacheHandler] = None):
+    def __init__(self, socket_io: AgentCloudSocketIO, cache: Optional[CacheHandler] = None):
         """Initialize the callback handler."""
         self.cache = cache
         self.last_used_tool = {}  # type: ignore # BUG?: same as above
-        self.send_to_socket = socket_write_fn
+        self.socket_io = socket_io
         self.tool_chunkId = None
 
     def on_tool_use(
-        self,
-        calling: Union[ToolCalling, InstructorToolCalling],
-        output: str,
-        should_cache: bool = True,
+            self,
+            calling: Union[ToolCalling, InstructorToolCalling],
+            output: str,
+            should_cache: bool = True,
     ) -> Any:
         """Run when tool ends running."""
         self.last_used_tool = calling  # type: ignore # BUG?: Incompatible types in assignment (expression has type "Union[ToolCalling, InstructorToolCalling]", variable has type "ToolCalling")
@@ -38,7 +39,7 @@ class ToolsHandler:
 
     def on_tool_start(self, tool_name: str):
         self.tool_chunkId = str(uuid.uuid4())
-        self.send_to_socket(
+        self.socket_io.send_to_socket(
             text=f"Using tool: {tool_name.capitalize()}",
             event="message",
             first=True,
@@ -48,7 +49,7 @@ class ToolsHandler:
         )
 
     def on_tool_end(self, tool_name: str):
-        self.send_to_socket(
+        self.socket_io.send_to_socket(
             text=f"Finished using tool: {tool_name.capitalize()}",
             event="message",
             first=True,
@@ -59,7 +60,7 @@ class ToolsHandler:
         )
 
     def on_tool_error(self, error_msg: str):
-        self.send_to_socket(
+        self.socket_io.send_to_socket(
             text=f"""Tool usage failed:
 ```
 {error_msg}
@@ -72,4 +73,3 @@ class ToolsHandler:
             display_type="bubble",
             overwrite=True
         )
-

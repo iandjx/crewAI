@@ -2,7 +2,7 @@ import uuid
 from abc import ABC, abstractmethod
 from copy import copy as shallow_copy
 from hashlib import md5
-from typing import Any, Dict, List, Optional, TypeVar
+from typing import Any, Dict, List, Optional, TypeVar, Callable
 
 from pydantic import (
     UUID4,
@@ -16,6 +16,7 @@ from pydantic import (
 )
 from pydantic_core import PydanticCustomError
 
+from crewai.agentcloud.socket_io import AgentCloudSocketIO
 from crewai.agents.agent_builder.utilities.base_token_process import TokenProcess
 from crewai.agents.cache.cache_handler import CacheHandler
 from crewai.agents.tools_handler import ToolsHandler
@@ -118,9 +119,9 @@ class BaseAgent(ABC, BaseModel):
     tools_handler: InstanceOf[ToolsHandler] = Field(
         default=None, description="An instance of the ToolsHandler class."
     )
-    step_callback: Optional[Any] = Field(
+    agentcloud_socket_io: AgentCloudSocketIO = Field(
         default=None,
-        description="Callback to be executed after each step of the agent execution.",
+        description="An instance of the AgentCloudSocketIO class.",
     )
 
     _original_role: str | None = None
@@ -246,7 +247,7 @@ class BaseAgent(ABC, BaseModel):
         Args:
             cache_handler: An instance of the CacheHandler class.
         """
-        self.tools_handler = ToolsHandler(socket_write_fn=self.step_callback)
+        self.tools_handler = ToolsHandler(socket_io=self.agentcloud_socket_io)
         if self.cache:
             self.cache_handler = cache_handler
             self.tools_handler.cache = cache_handler
@@ -264,3 +265,6 @@ class BaseAgent(ABC, BaseModel):
         if not self._rpm_controller:
             self._rpm_controller = rpm_controller
             self.create_agent_executor()
+
+    def set_agentcloud_socket_io(self, socket_io: AgentCloudSocketIO) -> None:
+        self.agentcloud_socket_io = socket_io

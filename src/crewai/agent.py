@@ -15,7 +15,7 @@ from pydantic import Field, InstanceOf, PrivateAttr, model_validator
 
 from crewai.agents import CacheHandler, CrewAgentExecutor, CrewAgentParser
 from crewai.agents.custom_parsers import GeminiAgentParser
-from crewai.agents.socket_stream_handler import SocketStreamHandler
+from crewai.agentcloud.socket_stream_handler import SocketStreamHandler
 from crewai.agents.agent_builder.base_agent import BaseAgent
 from crewai.memory.contextual.contextual_memory import ContextualMemory
 from crewai.tools.agent_tools import AgentTools
@@ -77,6 +77,10 @@ class Agent(BaseAgent):
     agent_ops_agent_id: str = None  # type: ignore # Incompatible types in assignment (expression has type "None", variable has type "str")
     cache_handler: InstanceOf[CacheHandler] = Field(
         default=None, description="An instance of the CacheHandler class."
+    )
+    step_callback: Optional[Any] = Field(
+        default=None,
+        description="Callback to be executed after each step of the agent execution.",
     )
     stop_generating_check: Optional[Any] = Field(
         default=None,
@@ -195,15 +199,16 @@ class Agent(BaseAgent):
         )
         self.agent_executor.tools_names = self.__tools_names(parsed_tools) or "None"
 
-        socket_stream_handler = SocketStreamHandler(
-            socket_write_fn=self.step_callback,
-            agent_name=self.name, task_name=task.name,
-            tools_names=self.agent_executor.tools_names)
-
         if self.crew and self.crew._train:
             task_prompt = self._training_handler(task_prompt=task_prompt)
         else:
             task_prompt = self._use_trained_data(task_prompt=task_prompt)
+
+        socket_stream_handler = SocketStreamHandler(
+            socket_io=self.agentcloud_socket_io,
+            agent_name=self.name, task_name=task.name,
+            tools_names=self.agent_executor.tools_names
+        )
 
         try:
             result = self.agent_executor.invoke(
