@@ -65,7 +65,7 @@ class SocketStreamHandler(BaseCallbackHandler):
             self.send_to_socket(
                 text=token,
                 event="message",
-                first=True,
+                first=self.first,
                 chunk_id=self.chunkId,
                 timestamp=datetime.now().timestamp() * 1000,
                 display_type="bubble",
