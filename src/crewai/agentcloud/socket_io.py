@@ -1,4 +1,5 @@
 from datetime import datetime
+from uuid import uuid4
 
 from socketio import SimpleClient
 from typing import Any, Optional
@@ -92,3 +93,36 @@ class AgentCloudSocketIO:
             ),
             "socket"
         )
+
+    def get_human_input(self, input_prompt: str, author_name='System'):
+        try:
+            self.send(
+                self.socket,
+                SocketEvents.MESSAGE,
+                SocketMessage(
+                    room=self.session_id,
+                    authorName=author_name,
+                    message=Message(
+                        chunkId=str(uuid4()),
+                        text=input_prompt,
+                        first=True,
+                        tokens=1,  # Assumes 1 token is a constant value for message segmentation.
+                        timestamp=datetime.now().timestamp() * 1000,
+                        single=True,
+                    ),
+                    isFeedback=True,
+                ),
+                "socket"
+            )
+            feedback = self.socket.receive()
+            return feedback[1]
+        except TimeoutError:
+            self.socket.emit(
+                "message",
+                {
+                    "room": self.session_id,
+                    "type": "error",
+                    "message": "TimeOutError"
+                },
+            )
+            return "exit"
