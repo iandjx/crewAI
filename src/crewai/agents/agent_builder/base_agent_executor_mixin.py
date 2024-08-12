@@ -104,6 +104,8 @@ class CrewAgentExecutorMixin:
 
     def _ask_human_input(self, final_answer: dict) -> str:
         """Prompt human input for final decision making."""
-        return input(
-            self._i18n.slice("getting_input").format(final_answer=final_answer)
+        return self.crew_agent.agentcloud_socket_io.get_human_input(
+            # `final_answer` is usually a string; adding a type-check to be safe and
+            # compatible with typespec in function signature
+            input_prompt=final_answer if type(final_answer) is str else str(final_answer)
         )

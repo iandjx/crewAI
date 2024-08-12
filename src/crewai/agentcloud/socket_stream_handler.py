@@ -2,20 +2,22 @@ import uuid
 from datetime import datetime
 
 from langchain_core.callbacks import BaseCallbackHandler
-from typing import TYPE_CHECKING, Any, Dict, List, Optional, Union, Callable
+from typing import Any, Dict, List, Optional, Union, Callable
 from uuid import UUID
 
 from langchain_core.outputs import ChatGenerationChunk, GenerationChunk, LLMResult
 
+from crewai.agentcloud.socket_io import AgentCloudSocketIO
+
 
 class SocketStreamHandler(BaseCallbackHandler):
-    def __init__(self, socket_write_fn: Callable, agent_name: str, task_name: str, tools_names: str):
-        self.send_to_socket = socket_write_fn
+    def __init__(self, socket_io: AgentCloudSocketIO, agent_name: str, task_name: str, tools_names: str):
+        self.socket_io = socket_io
         self.agent_name = agent_name
         self.chunkId = str(uuid.uuid4())
         self.task_chunkId = str(uuid.uuid4())
         self.first = True
-        self.send_to_socket(
+        self.socket_io.send_to_socket(
             text=f"""**Running task**: {task_name} **Available tools**: {tools_names}""",
             event="message",
             first=self.first,
@@ -45,7 +47,7 @@ class SocketStreamHandler(BaseCallbackHandler):
             tags: Optional[List[str]] = None,
             **kwargs: Any,
     ) -> None:
-        self.send_to_socket(
+        self.socket_io.send_to_socket(
             text="",
             event="terminate"
         )
@@ -62,7 +64,7 @@ class SocketStreamHandler(BaseCallbackHandler):
             **kwargs: Any,
     ) -> None:
         if token:
-            self.send_to_socket(
+            self.socket_io.send_to_socket(
                 text=token,
                 event="message",
                 first=self.first,
