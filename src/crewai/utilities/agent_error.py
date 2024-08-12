@@ -5,5 +5,5 @@ class AgentExecutionStoppedException(Exception):
     may not be the best method but will do until there's a proper langchain way to do it.
     """
     def __init__(self, message: str = None):
-        self.message = message or "Agent execution stopped."
+        self.message = message or "Agent execution terminated by user"
         super().__init__(self.message)

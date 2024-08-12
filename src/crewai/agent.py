@@ -204,6 +204,9 @@ class Agent(BaseAgent):
         else:
             task_prompt = self._use_trained_data(task_prompt=task_prompt)
 
+        if self.stop_generating_check():
+            return "Agent execution terminated by user"
+
         socket_stream_handler = SocketStreamHandler(
             socket_io=self.agentcloud_socket_io,
             agent_name=self.name, task_name=task.name,
