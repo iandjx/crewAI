@@ -209,8 +209,10 @@ class Agent(BaseAgent):
 
         socket_stream_handler = SocketStreamHandler(
             socket_io=self.agentcloud_socket_io,
-            agent_name=self.name, task_name=task.name,
-            tools_names=self.agent_executor.tools_names
+            agent_name=self.name,
+            task_name=task.name,
+            tools_names=self.agent_executor.tools_names,
+            stream_only_final_output=task.stream_only_final_output
         )
 
         try:

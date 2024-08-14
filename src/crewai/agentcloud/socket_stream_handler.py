@@ -1,6 +1,7 @@
 import uuid
 from datetime import datetime
 
+from langchain_core.agents import AgentFinish
 from langchain_core.callbacks import BaseCallbackHandler
 from typing import Any, Dict, List, Optional, Union, Callable
 from uuid import UUID
@@ -11,7 +12,8 @@ from crewai.agentcloud.socket_io import AgentCloudSocketIO
 
 
 class SocketStreamHandler(BaseCallbackHandler):
-    def __init__(self, socket_io: AgentCloudSocketIO, agent_name: str, task_name: str, tools_names: str):
+    def __init__(self, socket_io: AgentCloudSocketIO, agent_name: str, task_name: str, tools_names: str,
+                 stream_only_final_output: bool = False):
         self.socket_io = socket_io
         self.agent_name = agent_name
         self.chunkId = str(uuid.uuid4())
@@ -25,6 +27,7 @@ class SocketStreamHandler(BaseCallbackHandler):
             timestamp=datetime.now().timestamp() * 1000,
             display_type="inline"
         )
+        self.stream_only_final_output = stream_only_final_output
 
     def on_chain_end(
             self,
@@ -63,7 +66,7 @@ class SocketStreamHandler(BaseCallbackHandler):
             tags: Optional[List[str]] = None,
             **kwargs: Any,
     ) -> None:
-        if token:
+        if token and not (self.stream_only_final_output and any('seq:step' in x for x in tags)):
             self.socket_io.send_to_socket(
                 text=token,
                 event="message",
@@ -74,3 +77,14 @@ class SocketStreamHandler(BaseCallbackHandler):
                 author_name=self.agent_name
             )
             self.first = False
+
+    def on_agent_finish(self, finish: AgentFinish, **kwargs: Any) -> None:
+        self.socket_io.send_to_socket(
+            text=finish.return_values["output"],
+            event="message",
+            first=True,
+            chunk_id=self.chunkId,
+            timestamp=datetime.now().timestamp() * 1000,
+            display_type="bubble",
+            author_name=self.agent_name
+        )
