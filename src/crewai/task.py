@@ -40,6 +40,7 @@ class Task(BaseModel):
         output_json: Pydantic model for structuring JSON output.
         output_pydantic: Pydantic model for task output.
         tools: List of tools/resources limited for task execution.
+        stream_only_final_output: Controls whether intermediate Thought/Action steps of the agent are streamed to the client
     """
 
     class Config:
@@ -105,6 +106,10 @@ class Task(BaseModel):
     converter_cls: Optional[Type[Converter]] = Field(
         description="A converter class used to export structured output",
         default=None,
+    )
+    stream_only_final_output: Optional[bool] = Field(
+        description="Controls whether intermediate Thought/Action steps of the agent are streamed to the client",
+        default=False,
     )
 
     _telemetry: Telemetry
