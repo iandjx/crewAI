@@ -79,12 +79,4 @@ class SocketStreamHandler(BaseCallbackHandler):
             self.first = False
 
     def on_agent_finish(self, finish: AgentFinish, **kwargs: Any) -> None:
-        self.socket_io.send_to_socket(
-            text=finish.return_values["output"],
-            event="message",
-            first=True,
-            chunk_id=self.chunkId,
-            timestamp=datetime.now().timestamp() * 1000,
-            display_type="bubble",
-            author_name=self.agent_name
-        )
+        pass
